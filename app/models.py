@@ -19,6 +19,7 @@ class Tenant(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     settings: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     dialogs = relationship("Dialog", back_populates="tenant")
     messages = relationship("Message", back_populates="tenant")

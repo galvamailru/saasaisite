@@ -1,6 +1,5 @@
 """Chat: POST message -> SSE stream. Триггеры добавляются в промпт и при срабатывании файл выводится в ответ."""
 import json
-from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,18 +10,11 @@ from app.database import get_db
 from app.llm_client import stream_chat
 from app.schemas import ChatRequest
 from app.services.chat_service import get_or_create_dialog, get_dialog_messages_for_llm, save_message
-from app.services.prompt_loader import load_prompt
+from app.services.prompt_loader import load_prompt_for_tenant
 from app.services.cabinet_service import get_tenant_by_id
 from app.services.file_service import get_triggered_files_for_tenant, get_presigned_url
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["chat"])
-
-
-def _get_prompt(base_dir: Path | None = None) -> str:
-    try:
-        return load_prompt(base_dir)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 def _build_prompt_with_triggers(base_prompt: str, triggered_files: list) -> str:
@@ -50,7 +42,11 @@ async def _sse_stream(tenant_id: UUID, user_id: str, dialog_id: UUID | None, mes
     if not tenant:
         yield f"data: {json.dumps({'error': 'tenant not found'})}\n\n"
         return
-    base_prompt = _get_prompt()
+    try:
+        base_prompt = await load_prompt_for_tenant(db, tenant_id)
+    except FileNotFoundError as e:
+        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        return
     triggered_files = await get_triggered_files_for_tenant(db, tenant_id)
     prompt = _build_prompt_with_triggers(base_prompt, triggered_files)
     dialog = await get_or_create_dialog(db, tenant_id, user_id, dialog_id)

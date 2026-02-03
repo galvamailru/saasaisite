@@ -13,7 +13,14 @@
     .list li { padding: 0.5rem; border-bottom: 1px solid #eee; }
     .list li a { text-decoration: none; color: inherit; }
     .error { color: #c00; }
-    .prompt-box { white-space: pre-wrap; font-family: monospace; background: #f5f5f5; padding: 1rem; border-radius: 6px; max-height: 60vh; overflow: auto; }
+    .prompt-box { white-space: pre-wrap; font-family: monospace; background: #f5f5f5; padding: 1rem; border-radius: 6px; max-height: 50vh; overflow: auto; }
+    .prompt-edit { width: 100%; min-height: 300px; font-family: monospace; font-size: 0.9rem; padding: 1rem; border: 1px solid #ddd; border-radius: 6px; resize: vertical; }
+    .prompt-actions { margin-top: 0.75rem; }
+    .prompt-actions button { padding: 0.5rem 1rem; border-radius: 6px; border: none; background: #00acc1; color: #fff; cursor: pointer; }
+    .prompt-actions button:hover { background: #0097a7; }
+    .prompt-saved { color: #2e7d32; font-size: 0.9rem; margin-left: 0.5rem; }
+    .hint { font-size: 0.9rem; color: #555; margin-bottom: 0.75rem; }
+    .hint a { color: #00acc1; }
     .file-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
     .file-row input[type="text"] { flex: 1; max-width: 200px; }
     .gallery-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
@@ -131,7 +138,21 @@
         }
         const data = await r.json();
         document.getElementById('content').innerHTML =
-          '<h2>Промпт агента</h2><div class="prompt-box">' + (data.prompt ? data.prompt.replace(/</g, '&lt;').replace(/>/g, '&gt;') : '—') + '</div>';
+          '<h2>Промпт чат-бота</h2><p>Этот текст задаёт поведение бота в чате с клиентами. Измените при необходимости и нажмите «Сохранить промпт». Продвинутые пользователи могут редактировать промпт здесь напрямую; остальные — через <a href="#" data-goto="admin-chat">Админ-чат</a>.</p>' +
+          '<textarea class="prompt-edit" id="promptEdit" placeholder="Опишите роль бота, тон, правила ответов..."></textarea>' +
+          '<div class="prompt-actions"><button type="button" id="promptSave">Сохранить промпт</button><span class="prompt-saved" id="promptSaved"></span></div>';
+        document.getElementById('promptEdit').value = data.prompt || '';
+        document.getElementById('promptSave').addEventListener('click', async () => {
+          const text = document.getElementById('promptEdit').value;
+          const patch = await fetch(base + '/' + tenantId + '/me/prompt', {
+            method: 'PATCH',
+            headers: headers(true),
+            body: JSON.stringify({ prompt: text })
+          });
+          if (!patch.ok) { alert('Ошибка сохранения'); return; }
+          document.getElementById('promptSaved').textContent = 'Сохранено.';
+          setTimeout(() => { document.getElementById('promptSaved').textContent = ''; }, 3000);
+        });
       }
 
       async function loadFiles() {
@@ -144,6 +165,7 @@
         }
         const files = await r.json();
         let html = '<h2>Файлы</h2>';
+        html += '<p class="hint">Загружайте файлы, задавайте триггеры и удаляйте — изменения сохраняются по кнопкам. Можно также управлять через <a href="#" data-goto="admin-chat">Админ-чат</a>.</p>';
         html += '<form id="uploadForm"><input type="file" name="file" id="fileInput" /><button type="submit">Загрузить</button></form>';
         html += '<ul class="list" style="margin-top:1rem">';
         for (const f of files) {
@@ -212,6 +234,7 @@
         }
         const galleries = await r.json();
         let html = '<h2>Галереи</h2>';
+        html += '<p class="hint">Создавайте галереи и добавляйте в них файлы по кнопкам — или настройте через <a href="#" data-goto="admin-chat">Админ-чат</a>.</p>';
         html += '<form id="createGalleryForm"><input type="text" name="name" placeholder="Название галереи" /> <button type="submit">Создать</button></form>';
         html += '<div style="margin-top:1rem">';
         for (const g of galleries) {
@@ -268,14 +291,16 @@
         if (!requireAuth()) return;
         await ensureTenant();
         let html = '<h2>Админ-чат</h2>';
-        html += '<p>Управляйте файлами и галереями командами: <code>/help</code>, <code>/files</code>, <code>/trigger &lt;file_id&gt; &lt;фраза&gt;</code>, <code>/gallery list</code> и др.</p>';
+        html += '<p>Общайтесь с ботом: он сам предложит изменить промпт, добавить картинки в галерею или привязать триггеры. Продвинутые пользователи могут вносить изменения напрямую в разделах <a href="#" data-goto="prompt">Промпт</a>, <a href="#" data-goto="files">Файлы</a> и <a href="#" data-goto="galleries">Галереи</a> и нажимать «Сохранить».</p>';
         html += '<div class="chat-log" id="adminChatLog"></div>';
-        html += '<div class="chat-input"><textarea id="adminChatInput" placeholder="Команда или вопрос..."></textarea><button id="adminChatSend">Отправить</button></div>';
+        html += '<div class="chat-input"><textarea id="adminChatInput" placeholder="Напишите, чем помочь..."></textarea><button id="adminChatSend">Отправить</button></div>';
         document.getElementById('content').innerHTML = html;
 
         const log = document.getElementById('adminChatLog');
         const input = document.getElementById('adminChatInput');
         const send = document.getElementById('adminChatSend');
+        const adminChatHistory = [];
+        appendMsg('assistant', 'Здравствуйте! Чем могу помочь? Хотите изменить промпт бота для клиентов, добавить картинки в галерею или привязать фразы к файлам? Напишите, что вам нужно.');
 
         function appendMsg(role, text) {
           const div = document.createElement('div');
@@ -290,17 +315,25 @@
           if (!msg) return;
           input.value = '';
           appendMsg('user', msg);
+          adminChatHistory.push({ role: 'user', content: msg });
           const res = await fetch(base + '/' + tenantId + '/admin/chat', {
             method: 'POST',
             headers: headers(true),
-            body: JSON.stringify({ message: msg })
+            body: JSON.stringify({
+              message: msg,
+              history: adminChatHistory.slice(0, -1)
+            })
           });
           if (!res.ok) {
-            appendMsg('assistant', 'Ошибка: ' + (await res.text()));
+            const errText = await res.text();
+            appendMsg('assistant', 'Ошибка: ' + errText);
+            adminChatHistory.push({ role: 'assistant', content: 'Ошибка: ' + errText });
             return;
           }
           const data = await res.json();
-          appendMsg('assistant', data.reply || '');
+          const reply = data.reply || '';
+          appendMsg('assistant', reply);
+          adminChatHistory.push({ role: 'assistant', content: reply });
         });
       }
 
@@ -356,6 +389,14 @@
           window.history.pushState({}, '', '/' + tenantSlug + (page === 'my' ? '/my' : '/my/' + page));
           route();
         });
+      });
+      document.addEventListener('click', (e) => {
+        const a = e.target.closest('a[data-goto]');
+        if (!a) return;
+        e.preventDefault();
+        const page = a.getAttribute('data-goto');
+        window.history.pushState({}, '', '/' + tenantSlug + (page === 'my' ? '/my' : '/my/' + page));
+        route();
       });
       window.onpopstate = route;
       route();

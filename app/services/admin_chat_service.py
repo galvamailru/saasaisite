@@ -1,4 +1,4 @@
-"""Админ-чат: разбор slash-команд и агент, помогающий админу наполнять чат клиента контентом."""
+"""Админ-чат: диалог без команд. Бот понимает намерения, ведёт диалог и выполняет действия через блок [EXECUTE] в ответе."""
 import re
 from uuid import UUID
 
@@ -15,10 +15,12 @@ from app.services.gallery_service import (
     add_file_to_gallery,
     remove_from_gallery,
 )
-from app.services.prompt_loader import load_admin_prompt
+from app.services.prompt_loader import load_admin_prompt, load_prompt
+from app.services.cabinet_service import get_tenant_by_id
 
-# Fallback, если файл промпта недоступен
-ADMIN_SYSTEM_PROMPT_FALLBACK = """Ты — помощник администратора личного кабинета. Администратор управляет файлами и галереями через команды: /help, /files, /trigger, /gallery. Подскажи команды или ответь на вопрос о кабинете."""
+EXECUTE_BLOCK_RE = re.compile(r"\[EXECUTE\](.*?)\[/EXECUTE\]", re.DOTALL | re.IGNORECASE)
+
+ADMIN_SYSTEM_PROMPT_FALLBACK = """Ты — контент-менеджер в кабинете владельца чат-сайта. Веди диалог: спрашивай, чем помочь (промпт, галерея, триггеры), задавай уточняющие вопросы, предлагай изменения. Когда администратор согласен — выполняй действие, добавив в конец ответа блок [EXECUTE]...[/EXECUTE]. Администратор команд не вводит."""
 
 
 def _get_admin_prompt() -> str:
@@ -28,121 +30,124 @@ def _get_admin_prompt() -> str:
         return ADMIN_SYSTEM_PROMPT_FALLBACK
 
 
-async def _cmd_help() -> str:
-    return (
-        "Команды:\n"
-        "/files — список файлов\n"
-        "/trigger <file_id> <фраза> — привязать триггер к файлу\n"
-        "/trigger clear <file_id> — убрать триггер\n"
-        "/gallery list — список галерей\n"
-        "/gallery create <название> — создать галерею\n"
-        "/gallery add <gallery_id> <file_id> — добавить файл в галерею\n"
-        "/gallery remove <gallery_id> <item_id> — убрать из галереи\n"
-        "/gallery delete <gallery_id> — удалить галерею\n"
-        "/help — эта справка"
-    )
-
-
-async def _cmd_files(db: AsyncSession, tenant_id: UUID, user_id: str) -> str:
-    _, items = await list_user_files(db, tenant_id, user_id, limit=100, offset=0)
-    if not items:
-        return "Файлов пока нет. Загрузите их в разделе «Файлы»."
-    lines = []
-    for uf in items:
-        trigger = f" триггер: «{uf.trigger}»" if uf.trigger else ""
-        lines.append(f"- {uf.id} | {uf.filename}{trigger}")
-    return "Файлы:\n" + "\n".join(lines)
-
-
-async def _cmd_trigger(
-    db: AsyncSession, tenant_id: UUID, user_id: str, args: list[str],
-) -> str:
-    if len(args) < 1:
-        return "Использование: /trigger <file_id> <фраза> или /trigger clear <file_id>"
-    if args[0].lower() == "clear":
-        if len(args) < 2:
-            return "Укажите file_id: /trigger clear <file_id>"
+async def _build_state(db: AsyncSession, tenant_id: UUID, user_id: str) -> str:
+    """Текущее состояние: промпт бота, файлы, галереи — для контекста LLM."""
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        return ""
+    lines = ["Текущее состояние (используй при ответах):"]
+    current_prompt = getattr(tenant, "system_prompt", None) and (tenant.system_prompt or "").strip()
+    if not current_prompt:
         try:
-            file_id = UUID(args[1])
-        except ValueError:
-            return "Неверный file_id."
-        uf = await set_file_trigger(db, tenant_id, user_id, file_id, None)
-        if not uf:
-            return "Файл не найден."
-        return f"Триггер у файла «{uf.filename}» убран."
+            current_prompt = load_prompt()
+        except FileNotFoundError:
+            current_prompt = "(общий по умолчанию)"
+    lines.append("[Промпт бота для клиентов]")
+    lines.append(current_prompt[:4000] + ("..." if len(current_prompt or "") > 4000 else ""))
+    lines.append("")
+    _, files = await list_user_files(db, tenant_id, user_id, limit=100, offset=0)
+    lines.append("[Файлы: id | имя | триггер]")
+    for uf in files:
+        trigger = f" | «{uf.trigger}»" if uf.trigger else ""
+        lines.append(f"  {uf.id} | {uf.filename}{trigger}")
+    if not files:
+        lines.append("  (пока нет; загружаются в разделе «Файлы»)")
+    lines.append("")
+    galleries = await list_galleries(db, tenant_id, user_id)
+    lines.append("[Галереи: id | название | кол-во фото]")
+    for g in galleries:
+        cnt = await db.execute(
+            select(func.count()).select_from(GalleryItem).where(GalleryItem.gallery_id == g.id)
+        )
+        n = cnt.scalar() or 0
+        lines.append(f"  {g.id} | {g.name} | {n}")
+    if not galleries:
+        lines.append("  (пока нет)")
+    return "\n".join(lines)
+
+
+def _parse_and_execute(
+    db: AsyncSession,
+    tenant_id: UUID,
+    user_id: str,
+    block_content: str,
+) -> list[str]:
+    """Парсит содержимое одного блока [EXECUTE] и выполняет команду. Возвращает список сообщений об результате."""
+    lines = block_content.strip().split("\n")
+    if not lines:
+        return []
+    cmd = lines[0].strip().upper()
+    payload = "\n".join(lines[1:]).strip() if len(lines) > 1 else ""
+    results = []
     try:
-        file_id = UUID(args[0])
-    except ValueError:
-        return "Неверный file_id."
-    phrase = " ".join(args[1:]).strip() if len(args) > 1 else ""
-    if not phrase:
-        return "Укажите фразу: /trigger <file_id> <фраза>"
-    uf = await set_file_trigger(db, tenant_id, user_id, file_id, phrase[:128])
-    if not uf:
-        return "Файл не найден."
-    return f"Триггер «{phrase}» привязан к файлу «{uf.filename}»."
+        if cmd == "SET_PROMPT":
+            tenant = await get_tenant_by_id(db, tenant_id)
+            if tenant:
+                tenant.system_prompt = payload[:65535] if len(payload) > 65535 else payload
+                await db.flush()
+                results.append("Промпт бота заменён.")
+        elif cmd == "APPEND_PROMPT":
+            tenant = await get_tenant_by_id(db, tenant_id)
+            if tenant:
+                current = (tenant.system_prompt or "").strip()
+                new = (current + "\n\n" + payload).strip()[:65535]
+                tenant.system_prompt = new
+                await db.flush()
+                results.append("В промпт добавлен абзац.")
+        elif cmd == "ADD_TRIGGER":
+            parts = payload.split("\n", 1)
+            file_id_s = (parts[0] or "").strip()
+            phrase = (parts[1] or "").strip() if len(parts) > 1 else ""
+            if not file_id_s:
+                results.append("Ошибка: укажи file_id в ADD_TRIGGER.")
+            else:
+                try:
+                    fid = UUID(file_id_s)
+                    uf = await set_file_trigger(db, tenant_id, user_id, fid, phrase[:128] if phrase else None)
+                    if uf:
+                        results.append(f"Триггер привязан к файлу «{uf.filename}».")
+                    else:
+                        results.append("Файл не найден.")
+                except ValueError:
+                    results.append("Неверный file_id.")
+        elif cmd == "CLEAR_TRIGGER":
+            try:
+                fid = UUID(payload.strip())
+                uf = await set_file_trigger(db, tenant_id, user_id, fid, None)
+                if uf:
+                    results.append(f"Триггер у файла «{uf.filename}» убран.")
+                else:
+                    results.append("Файл не найден.")
+            except ValueError:
+                results.append("Неверный file_id.")
+        elif cmd == "CREATE_GALLERY":
+            name = payload.strip()[:256] or "Галерея"
+            g = await create_gallery(db, tenant_id, user_id, name)
+            results.append(f"Галерея «{g.name}» создана (id: {g.id}).")
+        elif cmd == "ADD_TO_GALLERY":
+            parts = payload.strip().split()
+            if len(parts) >= 2:
+                try:
+                    gid, fid = UUID(parts[0]), UUID(parts[1])
+                    item = await add_file_to_gallery(db, tenant_id, user_id, gid, fid)
+                    if item:
+                        results.append("Файл добавлен в галерею.")
+                    else:
+                        results.append("Галерея или файл не найдены.")
+                except ValueError:
+                    results.append("Неверные id.")
+            else:
+                results.append("Формат: ADD_TO_GALLERY\\n<gallery_id>\\n<file_id>")
+        else:
+            results.append(f"Неизвестная команда: {cmd}")
+    except Exception as e:
+        results.append(f"Ошибка: {e}")
+    return results
 
 
-async def _cmd_gallery(
-    db: AsyncSession, tenant_id: UUID, user_id: str, args: list[str],
-) -> str:
-    if not args:
-        return "Использование: /gallery list | create <name> | add <gallery_id> <file_id> | remove <gallery_id> <item_id> | delete <gallery_id>"
-    sub = args[0].lower()
-    if sub == "list":
-        galleries = await list_galleries(db, tenant_id, user_id)
-        if not galleries:
-            return "Галерей пока нет. Создайте: /gallery create <название>"
-        lines = []
-        for g in galleries:
-            cnt = await db.execute(
-                select(func.count()).select_from(GalleryItem).where(GalleryItem.gallery_id == g.id)
-            )
-            n = cnt.scalar() or 0
-            lines.append(f"- {g.id} | {g.name} ({n} фото)")
-        return "Галереи:\n" + "\n".join(lines)
-    if sub == "create":
-        name = " ".join(args[1:]).strip() if len(args) > 1 else "Галерея"
-        if not name:
-            return "Укажите название: /gallery create <название>"
-        g = await create_gallery(db, tenant_id, user_id, name[:256])
-        return f"Галерея «{g.name}» создана. id: {g.id}"
-    if sub == "add":
-        if len(args) < 3:
-            return "Использование: /gallery add <gallery_id> <file_id>"
-        try:
-            gallery_id = UUID(args[1])
-            file_id = UUID(args[2])
-        except ValueError:
-            return "Неверные id."
-        item = await add_file_to_gallery(db, tenant_id, user_id, gallery_id, file_id)
-        if not item:
-            return "Галерея или файл не найдены."
-        return "Файл добавлен в галерею."
-    if sub == "remove":
-        if len(args) < 3:
-            return "Использование: /gallery remove <gallery_id> <item_id>"
-        try:
-            gallery_id = UUID(args[1])
-            item_id = UUID(args[2])
-        except ValueError:
-            return "Неверные id."
-        ok = await remove_from_gallery(db, tenant_id, user_id, gallery_id, item_id)
-        if not ok:
-            return "Элемент или галерея не найдены."
-        return "Файл убран из галереи."
-    if sub == "delete":
-        if len(args) < 2:
-            return "Укажите gallery_id: /gallery delete <gallery_id>"
-        try:
-            gallery_id = UUID(args[1])
-        except ValueError:
-            return "Неверный gallery_id."
-        ok = await delete_gallery(db, tenant_id, user_id, gallery_id)
-        if not ok:
-            return "Галерея не найдена."
-        return "Галерея удалена."
-    return "Подкоманда: list | create | add | remove | delete"
+def _strip_execute_blocks(reply: str) -> str:
+    """Удаляет из ответа все блоки [EXECUTE]...[/EXECUTE] (их администратор не видит)."""
+    return EXECUTE_BLOCK_RE.sub("", reply).strip()
 
 
 async def handle_admin_message(
@@ -150,34 +155,40 @@ async def handle_admin_message(
     tenant_id: UUID,
     user_id: str,
     message: str,
+    history: list[dict[str, str]] | None = None,
 ) -> str:
     """
-    Обрабатывает сообщение админа: если начинается с / — выполняет команду,
-    иначе отправляет в LLM с системным промптом про команды.
+    Диалог без команд. Бот получает текущее состояние (промпт, файлы, галереи), историю и новое сообщение.
+    В ответе бот может добавить блок [EXECUTE]...[/EXECUTE] — мы выполняем команды и убираем блок из ответа.
     """
     text = (message or "").strip()
     if not text:
-        return "Напишите команду (начните с /) или вопрос. /help — справка."
+        return "Напишите, чем могу помочь: изменить промпт бота, добавить картинки в галерею, настроить триггеры?"
 
-    if not text.startswith("/"):
-        system_prompt = _get_admin_prompt()
-        reply = await chat_once(
-            system_prompt,
-            [{"role": "user", "content": text}],
-        )
-        return reply.strip()
+    state = await _build_state(db, tenant_id, user_id)
+    system_prompt = _get_admin_prompt()
+    system_with_state = system_prompt.rstrip() + "\n\n---\n" + state
 
-    parts = re.split(r"\s+", text, maxsplit=1)
-    cmd = parts[0].lower()
-    args = re.split(r"\s+", parts[1].strip()) if len(parts) > 1 and parts[1].strip() else []
+    messages = []
+    for h in (history or [])[-20:]:  # последние 20 пар
+        role = h.get("role", "user")
+        content = (h.get("content") or "").strip()
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": text})
 
-    if cmd == "/help":
-        return await _cmd_help()
-    if cmd == "/files":
-        return await _cmd_files(db, tenant_id, user_id)
-    if cmd == "/trigger":
-        return await _cmd_trigger(db, tenant_id, user_id, args)
-    if cmd == "/gallery":
-        return await _cmd_gallery(db, tenant_id, user_id, args)
+    reply = await chat_once(system_with_state, messages)
+    reply = (reply or "").strip()
 
-    return "Неизвестная команда. /help — справка."
+    executed = []
+    for m in EXECUTE_BLOCK_RE.finditer(reply):
+        block = m.group(1).strip()
+        executed.extend(_parse_and_execute(db, tenant_id, user_id, block))
+
+    reply_clean = _strip_execute_blocks(reply)
+    if executed:
+        reply_clean = reply_clean.rstrip()
+        if reply_clean:
+            reply_clean += "\n\n"
+        reply_clean += "✓ " + "; ".join(executed)
+    return reply_clean or "Готово."

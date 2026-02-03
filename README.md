@@ -30,7 +30,67 @@ alembic upgrade head
 python run.py
 ```
 
-Приложение: `http://localhost:8000`. Демо-тенант с slug `demo` создаётся миграцией 002.
+## Запуск под Windows (локально)
+
+1. **Установить:**
+   - [Python 3.11+](https://www.python.org/downloads/) (при установке включите «Add Python to PATH»).
+   - [PostgreSQL](https://www.postgresql.org/download/windows/) или использовать только БД из Docker (см. ниже).
+
+2. **Открыть терминал** (PowerShell или cmd) в папке проекта:
+   ```powershell
+   cd C:\путь\к\saasaisite
+   ```
+
+3. **Создать виртуальное окружение** (рекомендуется):
+   ```powershell
+   python -m venv venv
+   .\venv\Scripts\activate
+   ```
+
+4. **Установить зависимости:**
+   ```powershell
+   pip install -r requirements.txt
+   ```
+
+5. **Настроить окружение:**
+   - Скопировать `.env.example` в `.env`:  
+     `copy .env.example .env`
+   - В `.env` задать:
+     - `DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/cip` — учётные данные вашей PostgreSQL (пользователь, пароль, база `cip`).
+     - `DEEPSEEK_API_KEY=sk-...` — ключ API DeepSeek.
+     - При необходимости: `MINIO_ENDPOINT=localhost:9000`, `MINIO_ACCESS_KEY=minioadmin`, `MINIO_SECRET_KEY=minioadmin` (если MinIO запущен отдельно для загрузки файлов).
+
+6. **Поднять БД и миграции:**
+   - Вариант А — PostgreSQL установлен локально: создать базу `cip`, затем:
+     ```powershell
+     alembic upgrade head
+     ```
+   - Вариант Б — только БД в Docker:
+     ```powershell
+     docker-compose up -d db
+     # Подождать 5–10 сек, затем:
+     set DATABASE_URL=postgresql+asyncpg://cip:cip@localhost:5432/cip
+     alembic upgrade head
+     ```
+     В `.env` указать `DATABASE_URL=postgresql+asyncpg://cip:cip@localhost:5432/cip`.
+
+7. **Запустить приложение:**
+   ```powershell
+   python run.py
+   ```
+   Или с автоперезагрузкой при изменении кода:
+   ```powershell
+   uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
+8. **Открыть в браузере:** [http://localhost:8000](http://localhost:8000).  
+   Демо-тенант с slug `demo` создаётся миграцией 002: чат — [http://localhost:8000/demo/chat](http://localhost:8000/demo/chat), кабинет — [http://localhost:8000/demo/my](http://localhost:8000/demo/my).
+
+**MinIO (файлы в кабинете):** если нужна загрузка файлов, запустите MinIO отдельно, например:
+```powershell
+docker run -d -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin minio/minio server /data
+```
+В `.env` задать `MINIO_ENDPOINT=localhost:9000`, `MINIO_ACCESS_KEY=minioadmin`, `MINIO_SECRET_KEY=minioadmin`, `MINIO_BUCKET=cip-files`, `MINIO_SECURE=false`.
 
 ## Маршруты
 

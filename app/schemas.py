@@ -143,9 +143,20 @@ class GalleryAddItem(BaseModel):
     user_file_id: UUID
 
 
-# Admin chat (slash-commands)
+# Cabinet: system prompt (per-tenant chatbot)
+class PromptUpdate(BaseModel):
+    prompt: str = Field(..., max_length=65535)
+
+
+# Admin chat (диалог без команд; бот сам выполняет действия через [EXECUTE])
+class ChatMessage(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., max_length=8192)
+
+
 class AdminChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4096)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=30)
 
 
 class AdminChatResponse(BaseModel):

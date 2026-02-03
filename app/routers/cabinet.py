@@ -53,6 +53,7 @@ from app.schemas import (
     GalleryAddItem,
     AdminChatRequest,
     AdminChatResponse,
+    PromptUpdate,
 )
 from app.config import PROJECT_ROOT
 from app.services.admin_chat_service import handle_admin_message
@@ -250,7 +251,7 @@ async def update_user_profile(
     )
 
 
-# Промпт агента (просмотр)
+# Промпт чат-бота тенанта (просмотр и сохранение в БД — каждый админ настраивает своего бота)
 @router.get("/{tenant_id:uuid}/me/prompt")
 async def get_agent_prompt(
     tenant_id: UUID,
@@ -260,11 +261,28 @@ async def get_agent_prompt(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
+    if getattr(tenant, "system_prompt", None) and (tenant.system_prompt or "").strip():
+        return {"prompt": tenant.system_prompt}
     try:
         text = load_prompt(PROJECT_ROOT)
         return {"prompt": text}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.patch("/{tenant_id:uuid}/me/prompt")
+async def update_agent_prompt(
+    tenant_id: UUID,
+    body: PromptUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    tenant.system_prompt = body.prompt.strip() or None
+    await db.flush()
+    return {"prompt": tenant.system_prompt or ""}
 
 
 # Файлы пользователя (MinIO)
@@ -472,7 +490,7 @@ async def remove_item_from_gallery(
         raise HTTPException(status_code=404, detail="item or gallery not found")
 
 
-# Админ-чат: управление файлами и галереями через slash-команды
+# Админ-чат: диалог без команд; бот сам понимает намерения и выполняет действия
 @router.post("/{tenant_id:uuid}/admin/chat", response_model=AdminChatResponse)
 async def admin_chat(
     tenant_id: UUID,
@@ -483,5 +501,8 @@ async def admin_chat(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    reply = await handle_admin_message(db, tenant_id, user_id, body.message.strip())
+    history = [{"role": m.role, "content": m.content} for m in body.history]
+    reply = await handle_admin_message(
+        db, tenant_id, user_id, body.message.strip(), history=history
+    )
     return AdminChatResponse(reply=reply)
