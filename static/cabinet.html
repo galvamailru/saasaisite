@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Кабинет</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; }
+    nav { margin-bottom: 1rem; }
+    nav a { margin-right: 1rem; }
+    .list { list-style: none; padding: 0; }
+    .list li { padding: 0.5rem; border-bottom: 1px solid #eee; }
+    .list li a { text-decoration: none; color: inherit; }
+    .error { color: #c00; }
+    .prompt-box { white-space: pre-wrap; font-family: monospace; background: #f5f5f5; padding: 1rem; border-radius: 6px; max-height: 60vh; overflow: auto; }
+    .file-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+    .file-row input[type="text"] { flex: 1; max-width: 200px; }
+    .gallery-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    .chat-log { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 0.5rem; margin-bottom: 0.5rem; background: #fafafa; }
+    .chat-msg { margin: 0.5rem 0; }
+    .chat-msg.user { color: #06c; }
+    .chat-msg.assistant { color: #363; }
+    .chat-input { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .chat-input textarea { flex: 1; min-height: 60px; resize: vertical; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="#" data-page="my">Главная</a>
+    <a href="#" data-page="dialogs">Мои диалоги</a>
+    <a href="#" data-page="prompt">Промпт</a>
+    <a href="#" data-page="files">Файлы</a>
+    <a href="#" data-page="galleries">Галереи</a>
+    <a href="#" data-page="admin-chat">Админ-чат</a>
+    <a href="#" data-page="saved">Сохранённое</a>
+    <a href="#" data-page="profile">Профиль</a>
+    <span id="authLinks"></span>
+  </nav>
+  <div id="content"></div>
+  <script>
+    (function () {
+      const path = window.location.pathname;
+      const slugMatch = path.match(/^\/([^/]+)\//);
+      const tenantSlug = slugMatch ? slugMatch[1] : null;
+      if (!tenantSlug) {
+        document.getElementById('content').innerHTML = '<p class="error">Неверный URL. Ожидается /{tenant_slug}/my...</p>';
+        return;
+      }
+
+      let tenantId = null;
+      let userId = localStorage.getItem('cip_user_id') || 'anon-' + Math.random().toString(36).slice(2, 12);
+      if (!localStorage.getItem('cip_user_id')) localStorage.setItem('cip_user_id', userId);
+
+      const base = '/api/v1/tenants';
+      const headers = (json) => {
+        const h = { Accept: 'application/json' };
+        const token = localStorage.getItem('cip_access_token');
+        if (token) h['Authorization'] = 'Bearer ' + token;
+        else h['X-User-Id'] = userId;
+        if (json) h['Content-Type'] = 'application/json';
+        return h;
+      };
+
+      function requireAuth() {
+        if (!localStorage.getItem('cip_access_token')) {
+          window.location.href = '/' + tenantSlug + '/login?next=/' + tenantSlug + '/my';
+          return false;
+        }
+        return true;
+      }
+
+      function renderAuthLinks() {
+        const token = localStorage.getItem('cip_access_token');
+        const el = document.getElementById('authLinks');
+        if (token) {
+          el.innerHTML = '<a href="#" id="logoutBtn">Выйти</a>';
+          const btn = document.getElementById('logoutBtn');
+          if (btn) btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            localStorage.removeItem('cip_access_token');
+            localStorage.removeItem('cip_user_id');
+            localStorage.removeItem('cip_tenant_id');
+            window.location.href = '/' + tenantSlug + '/login';
+          });
+        } else {
+          el.innerHTML = '<a href="/' + tenantSlug + '/login">Войти</a> <a href="/' + tenantSlug + '/register">Регистрация</a>';
+        }
+      }
+
+      async function ensureTenant() {
+        if (tenantId) return;
+        const r = await fetch(base + '/by-slug/' + encodeURIComponent(tenantSlug));
+        if (!r.ok) throw new Error('Тенант не найден');
+        const t = await r.json();
+        tenantId = t.id;
+      }
+
+      function setLinks() {
+        document.querySelectorAll('nav a[data-page]').forEach(a => {
+          const page = a.getAttribute('data-page');
+          a.href = '/' + tenantSlug + (page === 'my' ? '/my' : '/my/' + page);
+        });
+      }
+
+      async function loadDialogs() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/dialogs?limit=20&offset=0', { headers: headers() });
+        if (!r.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки диалогов. Войдите в кабинет.</p>';
+          return;
+        }
+        const data = await r.json();
+        let html = '<h2>Мои диалоги</h2><ul class="list">';
+        for (const d of data.items || []) {
+          const preview = (d.preview || '').slice(0, 60) + (d.preview && d.preview.length > 60 ? '…' : '');
+          html += '<li><a href="/' + tenantSlug + '/my/dialogs">' + (d.id || '') + '</a> ' + (d.updated_at || '') + ' — ' + preview + '</li>';
+        }
+        html += '</ul>';
+        document.getElementById('content').innerHTML = html;
+      }
+
+      async function loadPrompt() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/prompt', { headers: headers() });
+        if (!r.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки промпта.</p>';
+          return;
+        }
+        const data = await r.json();
+        document.getElementById('content').innerHTML =
+          '<h2>Промпт агента</h2><div class="prompt-box">' + (data.prompt ? data.prompt.replace(/</g, '&lt;').replace(/>/g, '&gt;') : '—') + '</div>';
+      }
+
+      async function loadFiles() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/files?limit=100&offset=0', { headers: headers() });
+        if (!r.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки файлов.</p>';
+          return;
+        }
+        const files = await r.json();
+        let html = '<h2>Файлы</h2>';
+        html += '<form id="uploadForm"><input type="file" name="file" id="fileInput" /><button type="submit">Загрузить</button></form>';
+        html += '<ul class="list" style="margin-top:1rem">';
+        for (const f of files) {
+          const triggerVal = (f.trigger || '').replace(/"/g, '&quot;');
+          html += '<li class="file-row">';
+          html += '<span>' + (f.filename || f.id) + '</span> ';
+          html += '<input type="text" data-file-id="' + f.id + '" placeholder="Триггер (фраза)" value="' + triggerVal + '" /> ';
+          html += '<button type="button" class="setTrigger" data-file-id="' + f.id + '">Сохранить триггер</button> ';
+          if (f.url) html += '<a href="' + f.url + '" target="_blank">Открыть</a> ';
+          html += '<button type="button" class="deleteFile" data-file-id="' + f.id + '">Удалить</button>';
+          html += '</li>';
+        }
+        html += '</ul>';
+        document.getElementById('content').innerHTML = html;
+
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const input = document.getElementById('fileInput');
+          if (!input.files || !input.files[0]) return;
+          const fd = new FormData();
+          fd.append('file', input.files[0]);
+          const up = await fetch(base + '/' + tenantId + '/me/files', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + localStorage.getItem('cip_access_token') },
+            body: fd
+          });
+          if (!up.ok) { alert('Ошибка загрузки'); return; }
+          input.value = '';
+          loadFiles();
+        });
+        document.getElementById('content').querySelectorAll('.setTrigger').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const fileId = btn.getAttribute('data-file-id');
+            const input = document.querySelector('input[data-file-id="' + fileId + '"]');
+            const trigger = input ? input.value.trim() || null : null;
+            const patch = await fetch(base + '/' + tenantId + '/me/files/' + fileId, {
+              method: 'PATCH',
+              headers: headers(true),
+              body: JSON.stringify({ trigger: trigger })
+            });
+            if (!patch.ok) { alert('Ошибка'); return; }
+            loadFiles();
+          });
+        });
+        document.getElementById('content').querySelectorAll('.deleteFile').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('Удалить файл?')) return;
+            const fileId = btn.getAttribute('data-file-id');
+            const del = await fetch(base + '/' + tenantId + '/me/files/' + fileId, {
+              method: 'DELETE',
+              headers: headers()
+            });
+            if (!del.ok) { alert('Ошибка'); return; }
+            loadFiles();
+          });
+        });
+      }
+
+      async function loadGalleries() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/galleries', { headers: headers() });
+        if (!r.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки галерей.</p>';
+          return;
+        }
+        const galleries = await r.json();
+        let html = '<h2>Галереи</h2>';
+        html += '<form id="createGalleryForm"><input type="text" name="name" placeholder="Название галереи" /> <button type="submit">Создать</button></form>';
+        html += '<div style="margin-top:1rem">';
+        for (const g of galleries) {
+          html += '<div class="gallery-card"><strong>' + (g.name || g.id) + '</strong> (id: ' + g.id + ', фото: ' + (g.item_count || 0) + ')';
+          html += ' <button type="button" class="deleteGallery" data-gallery-id="' + g.id + '">Удалить галерею</button>';
+          html += '<p>Добавить файл: <input type="text" class="addFileId" placeholder="file_id" data-gallery-id="' + g.id + '" /><button type="button" class="addToGallery" data-gallery-id="' + g.id + '">Добавить</button></p>';
+          html += '</div>';
+        }
+        html += '</div>';
+        document.getElementById('content').innerHTML = html;
+
+        document.getElementById('createGalleryForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const name = document.querySelector('#createGalleryForm input[name="name"]').value.trim() || 'Галерея';
+          const cr = await fetch(base + '/' + tenantId + '/me/galleries', {
+            method: 'POST',
+            headers: headers(true),
+            body: JSON.stringify({ name: name })
+          });
+          if (!cr.ok) { alert('Ошибка создания'); return; }
+          loadGalleries();
+        });
+        document.getElementById('content').querySelectorAll('.deleteGallery').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('Удалить галерею?')) return;
+            const galleryId = btn.getAttribute('data-gallery-id');
+            const del = await fetch(base + '/' + tenantId + '/me/galleries/' + galleryId, {
+              method: 'DELETE',
+              headers: headers()
+            });
+            if (!del.ok) { alert('Ошибка'); return; }
+            loadGalleries();
+          });
+        });
+        document.getElementById('content').querySelectorAll('.addToGallery').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const galleryId = btn.getAttribute('data-gallery-id');
+            const input = document.querySelector('.addFileId[data-gallery-id="' + galleryId + '"]');
+            const fileId = input ? input.value.trim() : '';
+            if (!fileId) { alert('Введите file_id'); return; }
+            const add = await fetch(base + '/' + tenantId + '/me/galleries/' + galleryId + '/items', {
+              method: 'POST',
+              headers: headers(true),
+              body: JSON.stringify({ user_file_id: fileId })
+            });
+            if (!add.ok) { const j = await add.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
+            input.value = '';
+            loadGalleries();
+          });
+        });
+      }
+
+      async function loadAdminChat() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        let html = '<h2>Админ-чат</h2>';
+        html += '<p>Управляйте файлами и галереями командами: <code>/help</code>, <code>/files</code>, <code>/trigger &lt;file_id&gt; &lt;фраза&gt;</code>, <code>/gallery list</code> и др.</p>';
+        html += '<div class="chat-log" id="adminChatLog"></div>';
+        html += '<div class="chat-input"><textarea id="adminChatInput" placeholder="Команда или вопрос..."></textarea><button id="adminChatSend">Отправить</button></div>';
+        document.getElementById('content').innerHTML = html;
+
+        const log = document.getElementById('adminChatLog');
+        const input = document.getElementById('adminChatInput');
+        const send = document.getElementById('adminChatSend');
+
+        function appendMsg(role, text) {
+          const div = document.createElement('div');
+          div.className = 'chat-msg ' + role;
+          div.textContent = (role === 'user' ? 'Вы: ' : 'Бот: ') + text;
+          log.appendChild(div);
+          log.scrollTop = log.scrollHeight;
+        }
+
+        send.addEventListener('click', async () => {
+          const msg = (input.value || '').trim();
+          if (!msg) return;
+          input.value = '';
+          appendMsg('user', msg);
+          const res = await fetch(base + '/' + tenantId + '/admin/chat', {
+            method: 'POST',
+            headers: headers(true),
+            body: JSON.stringify({ message: msg })
+          });
+          if (!res.ok) {
+            appendMsg('assistant', 'Ошибка: ' + (await res.text()));
+            return;
+          }
+          const data = await res.json();
+          appendMsg('assistant', data.reply || '');
+        });
+      }
+
+      async function loadSaved() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/saved?limit=50&offset=0', { headers: headers() });
+        if (!r.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки сохранённого</p>';
+          return;
+        }
+        const items = await r.json();
+        let html = '<h2>Сохранённое</h2><ul class="list">';
+        for (const i of items) {
+          html += '<li>' + (i.type || '') + ' — ' + (i.reference_id || '') + ' (' + (i.created_at || '') + ')</li>';
+        }
+        html += '</ul>';
+        document.getElementById('content').innerHTML = html;
+      }
+
+      async function loadProfile() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/profile', { headers: headers() });
+        if (!r.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки профиля</p>';
+          return;
+        }
+        const p = await r.json();
+        document.getElementById('content').innerHTML =
+          '<h2>Профиль</h2><p>user_id: ' + (p.user_id || '') + '</p><p>Имя: ' + (p.display_name || '—') + '</p><p>Контакт: ' + (p.contact || '—') + '</p>';
+      }
+
+      function route() {
+        const segs = window.location.pathname.split('/').filter(Boolean);
+        const page = segs[2] || 'my';
+        setLinks();
+        renderAuthLinks();
+        if (page === 'dialogs') loadDialogs();
+        else if (page === 'prompt') loadPrompt();
+        else if (page === 'files') loadFiles();
+        else if (page === 'galleries') loadGalleries();
+        else if (page === 'admin-chat') loadAdminChat();
+        else if (page === 'saved') loadSaved();
+        else if (page === 'profile') loadProfile();
+        else loadDialogs();
+      }
+
+      document.querySelectorAll('nav a[data-page]').forEach(a => {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const page = a.getAttribute('data-page');
+          window.history.pushState({}, '', '/' + tenantSlug + (page === 'my' ? '/my' : '/my/' + page));
+          route();
+        });
+      });
+      window.onpopstate = route;
+      route();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+"""FastAPI app: chat, cabinet API, static pages."""
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.routers import auth, chat, cabinet
+from app.services.cabinet_service import get_tenant_by_slug
+
+app = FastAPI(title="CIP Backend", description="Chat + User Cabinet API")
+
+app.include_router(auth.router)
+app.include_router(chat.router)
+app.include_router(cabinet.router)
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+STATIC_DIR.mkdir(exist_ok=True)
+
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/{slug}/chat")
+async def serve_chat(slug: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+    tenant = await get_tenant_by_slug(db, slug)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    chat_path = STATIC_DIR / "chat.html"
+    if not chat_path.exists():
+        raise HTTPException(status_code=404, detail="chat page not found")
+    return FileResponse(chat_path)
+
+
+@app.get("/{slug}/my")
+@app.get("/{slug}/my/{path:path}")
+async def serve_cabinet(slug: str, path: str = "", db: AsyncSession = Depends(get_db)) -> FileResponse:
+    tenant = await get_tenant_by_slug(db, slug)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    cabinet_path = STATIC_DIR / "cabinet.html"
+    if not cabinet_path.exists():
+        raise HTTPException(status_code=404, detail="cabinet page not found")
+    return FileResponse(cabinet_path)
+
+
+@app.get("/{slug}/register")
+async def serve_register(slug: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+    tenant = await get_tenant_by_slug(db, slug)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    path = STATIC_DIR / "register.html"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="register page not found")
+    return FileResponse(path)
+
+
+@app.get("/{slug}/login")
+async def serve_login(slug: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+    tenant = await get_tenant_by_slug(db, slug)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    path = STATIC_DIR / "login.html"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="login page not found")
+    return FileResponse(path)
+
+
+@app.get("/{slug}/confirm")
+async def serve_confirm(slug: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+    tenant = await get_tenant_by_slug(db, slug)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    path = STATIC_DIR / "confirm.html"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="confirm page not found")
+    return FileResponse(path)
+
+
+@app.get("/")
+async def root():
+    return FileResponse(STATIC_DIR / "index.html") if (STATIC_DIR / "index.html").exists() else {"app": "CIP"}

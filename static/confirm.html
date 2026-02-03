@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Подтверждение email</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 2rem; max-width: 500px; margin-left: auto; margin-right: auto; }
+    .success { color: #080; }
+    .error { color: #c00; }
+    a { color: #06c; }
+  </style>
+</head>
+<body>
+  <p id="status">Проверка ссылки...</p>
+  <p id="link" style="margin-top: 1rem;"></p>
+  <script>
+    (function () {
+      const path = window.location.pathname;
+      const slug = path.match(/^\/([^/]+)\/confirm\/?$/)?.[1];
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      const status = document.getElementById('status');
+      const linkEl = document.getElementById('link');
+
+      if (!slug || !token) {
+        status.textContent = 'Неверная ссылка: отсутствует tenant или token.';
+        status.className = 'error';
+        return;
+      }
+
+      (async () => {
+        try {
+          const r = await fetch('/api/v1/tenants/by-slug/' + encodeURIComponent(slug) + '/confirm?token=' + encodeURIComponent(token));
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            status.textContent = data.detail || r.statusText || 'Ссылка недействительна или истекла.';
+            status.className = 'error';
+            linkEl.innerHTML = '<a href="/' + slug + '/register">Зарегистрироваться снова</a>';
+            return;
+          }
+          status.textContent = data.message || 'Email подтверждён. Теперь вы можете войти.';
+          status.className = 'success';
+          linkEl.innerHTML = '<a href="/' + slug + '/login">Войти</a>';
+        } catch (err) {
+          status.textContent = err.message || 'Ошибка';
+          status.className = 'error';
+        }
+      })();
+    })();
+  </script>
+</body>
+</html>

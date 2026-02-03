@@ -1,0 +1,57 @@
+"""Configuration from .env only."""
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    database_url: str = "postgresql+asyncpg://user:password@localhost:5432/cip"
+    deepseek_api_url: str = "https://api.deepseek.com/v1"
+    deepseek_api_key: str = ""
+    prompt_file: str = "prompts/system_prompt.txt"
+    admin_prompt_file: str = "prompts/admin_chat_prompt.txt"
+    app_host: str = "0.0.0.0"
+    app_port: int = 8000
+
+    # Auth & email
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "noreply@example.com"
+    frontend_base_url: str = "http://localhost:8000"  # for confirmation link
+
+    # MinIO (файлы пользователя в личном кабинете)
+    minio_endpoint: str = "localhost:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_bucket: str = "cip-files"
+    minio_secure: bool = False
+
+    def get_prompt_path(self, base_dir: Path | None = None) -> Path:
+        p = Path(self.prompt_file)
+        if not p.is_absolute():
+            base = base_dir if base_dir is not None else PROJECT_ROOT
+            p = base / p
+        return p
+
+    def get_admin_prompt_path(self, base_dir: Path | None = None) -> Path:
+        p = Path(self.admin_prompt_file)
+        if not p.is_absolute():
+            base = base_dir if base_dir is not None else PROJECT_ROOT
+            p = base / p
+        return p
+
+
+settings = Settings()

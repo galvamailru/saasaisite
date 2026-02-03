@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Чат</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 2rem 1rem;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #e3f2fd 0%, #f5f5f5 50%);
+      background-attachment: fixed;
+    }
+    .chat-card {
+      max-width: 720px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 80vh;
+    }
+    .chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid #eee;
+      background: #fafafa;
+    }
+    .chat-header-left h1 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #333;
+    }
+    .chat-header-left p {
+      margin: 0.25rem 0 0;
+      font-size: 0.85rem;
+      color: #666;
+    }
+    .chat-header-right {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      color: #666;
+    }
+    .chat-header-right .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: #eee;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #666;
+    }
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .msg {
+      padding: 0.75rem 1rem;
+      border-radius: 16px;
+      max-width: 85%;
+      line-height: 1.45;
+      word-wrap: break-word;
+    }
+    .msg.assistant {
+      align-self: flex-start;
+      background: #f0f0f0;
+      color: #333;
+      border-bottom-left-radius: 4px;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: #00acc1;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .msg.assistant a {
+      color: #0277bd;
+      text-decoration: none;
+    }
+    .msg.assistant a:hover { text-decoration: underline; }
+    .content-strip {
+      padding: 0.75rem 1.25rem;
+      border-top: 1px solid #eee;
+      background: #fafafa;
+      overflow-x: auto;
+      overflow-y: hidden;
+      display: none;
+    }
+    .content-strip.has-cards { display: block; }
+    .content-strip-inner {
+      display: flex;
+      gap: 1rem;
+      padding-bottom: 0.25rem;
+    }
+    .content-card {
+      flex: 0 0 180px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      text-decoration: none;
+      color: inherit;
+      display: block;
+      transition: transform 0.2s;
+    }
+    .content-card:hover { transform: translateY(-2px); }
+    .content-card-img {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      background: #e0e0e0;
+    }
+    .content-card-img.fallback {
+      object-fit: none;
+      background: #e3f2fd;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+    }
+    .content-card-caption {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.85rem;
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .input-area {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid #eee;
+      background: #fff;
+    }
+    .input-hint {
+      font-size: 0.8rem;
+      color: #999;
+      margin-bottom: 0.5rem;
+    }
+    .quick-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .pill {
+      padding: 0.4rem 0.9rem;
+      border-radius: 20px;
+      border: 1px solid #00acc1;
+      background: #fff;
+      color: #00acc1;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    .pill:hover {
+      background: #00acc1;
+      color: #fff;
+    }
+    .input-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    #input {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      border: 1px solid #ddd;
+      border-radius: 24px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #input:focus { border-color: #00acc1; }
+    #send {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 24px;
+      background: #00acc1;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #send:hover { background: #0097a7; }
+    #send:disabled { opacity: 0.6; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="chat-card">
+    <header class="chat-header">
+      <div class="chat-header-left">
+        <h1 id="greeting">Привет!</h1>
+        <p id="subtitle">Напишите вопрос — отвечу и подскажу материалы</p>
+      </div>
+      <div class="chat-header-right">
+        <span id="chatLabel">Чат</span>
+        <button type="button" class="icon-btn" title="Информация" aria-label="Информация">ℹ</button>
+      </div>
+    </header>
+
+    <div id="messages"></div>
+
+    <div class="content-strip" id="contentStrip">
+      <div class="content-strip-inner" id="contentStripInner"></div>
+    </div>
+
+    <div class="input-area">
+      <p class="input-hint" id="inputHint">Напишите сообщение или выберите подсказку</p>
+      <div class="quick-pills" id="quickPills"></div>
+      <form id="form" class="input-row">
+        <input id="input" type="text" placeholder="Сообщение..." autocomplete="off">
+        <button type="submit" id="send">Отправить</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const path = window.location.pathname;
+      const slugMatch = path.match(/^\/([^/]+)\/chat\/?$/);
+      const tenantSlug = slugMatch ? slugMatch[1] : null;
+      if (!tenantSlug) {
+        document.getElementById('messages').innerHTML = '<p style="padding:1rem">Неверный URL. Ожидается /{tenant_slug}/chat</p>';
+        return;
+      }
+
+      let tenantId = null;
+      let tenantName = '';
+      let userId = localStorage.getItem('cip_user_id') || 'anon-' + Math.random().toString(36).slice(2, 12);
+      localStorage.setItem('cip_user_id', userId);
+      let dialogId = null;
+
+      const contentCards = [];
+
+      function escapeHtml(s) {
+        const div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+      }
+
+      function linkifyAndStripFiles(text) {
+        const fileRegex = /\[Файл:\s*([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+        const files = [];
+        let cleaned = text.replace(fileRegex, (_, name, url) => {
+          files.push({ name: name.trim(), url });
+          return '';
+        }).trim().replace(/\n{2,}/g, '\n\n');
+        let html = escapeHtml(cleaned).replace(/\n/g, '<br>');
+        const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+        html = html.replace(linkRegex, (_, t, u) => '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>');
+        return { html, files };
+      }
+
+      function addMsg(role, text, opts) {
+        const div = document.createElement('div');
+        div.className = 'msg ' + role;
+        if (role === 'assistant' && (opts && opts.files && opts.files.length)) {
+          const { html, files } = opts.filesProcessed || linkifyAndStripFiles(text);
+          div.innerHTML = html || '—';
+          files.forEach(f => addContentCard(f.name, f.url));
+        } else if (role === 'assistant') {
+          const { html } = linkifyAndStripFiles(text);
+          div.innerHTML = html || escapeHtml(text).replace(/\n/g, '<br>');
+        } else {
+          div.textContent = text;
+        }
+        document.getElementById('messages').appendChild(div);
+        div.scrollIntoView({ behavior: 'smooth' });
+      }
+
+      function addContentCard(caption, url) {
+        contentCards.push({ caption, url });
+        const strip = document.getElementById('contentStrip');
+        const inner = document.getElementById('contentStripInner');
+        const card = document.createElement('a');
+        card.className = 'content-card';
+        card.href = url;
+        card.target = '_blank';
+        card.rel = 'noopener';
+        const isImage = /\.(jpe?g|png|gif|webp)$/i.test(url) || caption.match(/\.(jpe?g|png|gif|webp)$/i);
+        if (isImage) {
+          const im = document.createElement('img');
+          im.className = 'content-card-img';
+          im.src = url;
+          im.alt = caption;
+          im.onerror = () => {
+            const div = document.createElement('div');
+            div.className = 'content-card-img fallback';
+            div.textContent = '📄';
+            im.replaceWith(div);
+          };
+          card.appendChild(im);
+        } else {
+          const fallback = document.createElement('div');
+          fallback.className = 'content-card-img fallback';
+          fallback.textContent = '📄';
+          card.appendChild(fallback);
+        }
+        const cap = document.createElement('div');
+        cap.className = 'content-card-caption';
+        cap.textContent = caption;
+        card.appendChild(cap);
+        inner.appendChild(card);
+        strip.classList.add('has-cards');
+      }
+
+      function renderPills(suggestions) {
+        const el = document.getElementById('quickPills');
+        el.innerHTML = '';
+        (suggestions || []).forEach(s => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'pill';
+          b.textContent = s;
+          b.addEventListener('click', () => {
+            document.getElementById('input').value = s;
+            document.getElementById('input').focus();
+          });
+          el.appendChild(b);
+        });
+      }
+
+      async function init() {
+        const r = await fetch('/api/v1/tenants/by-slug/' + encodeURIComponent(tenantSlug));
+        if (!r.ok) {
+          addMsg('assistant', 'Тенант не найден.');
+          return;
+        }
+        const t = await r.json();
+        tenantId = t.id;
+        tenantName = t.name || 'Сайт';
+        document.getElementById('greeting').textContent = 'Привет!';
+        document.getElementById('subtitle').textContent = 'Задайте вопрос — подскажу и покажу полезные материалы.';
+        renderPills(['Расскажи о вас', 'Какие услуги?', 'Контакты']);
+      }
+
+      const form = document.getElementById('form');
+      const input = document.getElementById('input');
+      const sendBtn = document.getElementById('send');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const text = input.value.trim();
+        if (!text || !tenantId) return;
+        input.value = '';
+        addMsg('user', text);
+        sendBtn.disabled = true;
+        const assistantEl = document.createElement('div');
+        assistantEl.className = 'msg assistant';
+        assistantEl.textContent = '…';
+        document.getElementById('messages').appendChild(assistantEl);
+        assistantEl.scrollIntoView({ behavior: 'smooth' });
+        let full = '';
+        let filesProcessed = null;
+        try {
+          const body = { user_id: userId, message: text };
+          if (dialogId) body.dialog_id = dialogId;
+          const res = await fetch('/api/v1/tenants/' + tenantId + '/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            assistantEl.textContent = 'Ошибка: ' + (err.detail || res.status);
+            return;
+          }
+          const reader = res.body.getReader();
+          const dec = new TextDecoder();
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            const chunk = dec.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') break;
+                try {
+                  const obj = JSON.parse(data);
+                  if (obj.content) {
+                    full += obj.content;
+                    filesProcessed = linkifyAndStripFiles(full);
+                    assistantEl.innerHTML = filesProcessed.html || '—';
+                    assistantEl.scrollIntoView({ behavior: 'smooth' });
+                  }
+                  if (obj.error) assistantEl.textContent = 'Ошибка: ' + obj.error;
+                } catch (_) {}
+              }
+            }
+          }
+          if (full) {
+            filesProcessed = linkifyAndStripFiles(full);
+            assistantEl.innerHTML = filesProcessed.html || '—';
+            filesProcessed.files.forEach(f => addContentCard(f.name, f.url));
+            try {
+              const j = await fetch('/api/v1/tenants/' + tenantId + '/me/dialogs?limit=1', {
+                headers: { 'X-User-Id': userId },
+              }).then(r => r.json());
+              if (j.items && j.items[0]) dialogId = j.items[0].id;
+            } catch (_) {}
+          }
+        } finally {
+          sendBtn.disabled = false;
+        }
+      });
+
+      init();
+    })();
+  </script>
+</body>
+</html>

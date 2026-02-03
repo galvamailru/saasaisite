@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Регистрация</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 2rem; max-width: 400px; margin-left: auto; margin-right: auto; }
+    h1 { margin-top: 0; }
+    label { display: block; margin-top: 1rem; }
+    input { width: 100%; padding: 0.5rem; font-size: 1rem; margin-top: 0.25rem; }
+    button { margin-top: 1.5rem; padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+    .error { color: #c00; margin-top: 0.5rem; }
+    .success { color: #080; margin-top: 0.5rem; }
+    a { color: #06c; }
+  </style>
+</head>
+<body>
+  <h1>Регистрация</h1>
+  <p id="msg" class="success" style="display:none;"></p>
+  <p id="err" class="error" style="display:none;"></p>
+  <form id="form">
+    <label>Email <input type="email" id="email" required autocomplete="email"></label>
+    <label>Пароль (не менее 8 символов) <input type="password" id="password" required minlength="8" autocomplete="new-password"></label>
+    <button type="submit">Зарегистрироваться</button>
+  </form>
+  <p style="margin-top: 1.5rem;"><a href="#" id="loginLink">Войти</a></p>
+  <script>
+    (function () {
+      const path = window.location.pathname;
+      const slug = path.match(/^\/([^/]+)\/register\/?$/)?.[1];
+      if (!slug) {
+        document.getElementById('err').textContent = 'Неверный URL. Ожидается /{tenant_slug}/register';
+        document.getElementById('err').style.display = 'block';
+        return;
+      }
+      document.getElementById('loginLink').href = '/' + slug + '/login';
+
+      let tenantId = null;
+      async function ensureTenant() {
+        if (tenantId) return;
+        const r = await fetch('/api/v1/tenants/by-slug/' + encodeURIComponent(slug));
+        if (!r.ok) throw new Error('Тенант не найден');
+        const t = await r.json();
+        tenantId = t.id;
+      }
+
+      document.getElementById('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        document.getElementById('err').style.display = 'none';
+        document.getElementById('msg').style.display = 'none';
+        try {
+          await ensureTenant();
+          const r = await fetch('/api/v1/tenants/' + tenantId + '/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            document.getElementById('err').textContent = data.detail || r.statusText || 'Ошибка';
+            document.getElementById('err').style.display = 'block';
+            return;
+          }
+          document.getElementById('msg').textContent = 'Письмо с подтверждением отправлено на ' + email + '. Перейдите по ссылке в письме.';
+          document.getElementById('msg').style.display = 'block';
+          document.getElementById('form').reset();
+        } catch (err) {
+          document.getElementById('err').textContent = err.message || 'Ошибка';
+          document.getElementById('err').style.display = 'block';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
