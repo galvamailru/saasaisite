@@ -1,8 +1,9 @@
 """FastAPI app: chat, cabinet API, static pages."""
+import traceback
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,19 @@ from app.routers import auth, chat, cabinet
 from app.services.cabinet_service import get_tenant_by_slug
 
 app = FastAPI(title="CIP Backend", description="Chat + User Cabinet API")
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc: Exception):
+    """В ответе 500 возвращаем текст ошибки для отладки."""
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": str(exc),
+            "type": type(exc).__name__,
+            "traceback": traceback.format_exc(),
+        },
+    )
 
 app.include_router(auth.router)
 app.include_router(chat.router)
