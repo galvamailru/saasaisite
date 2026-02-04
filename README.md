@@ -11,15 +11,17 @@ Backend многопользовательской SaaS-платформы ди�
 
 ## Быстрый старт
 
-1. Скопировать `.env.example` в `.env` и задать переменные (в т.ч. `DATABASE_URL`, `DEEPSEEK_API_KEY`, `PROMPT_FILE`).
+1. Скопировать `.env.example` в `.env` и задать переменные: пароли и пользователи БД (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`), MinIO (`MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`), SMTP (в Docker используется контейнер Mailpit), `DEEPSEEK_API_KEY`.
 2. Запуск через Docker Compose:
 
 ```bash
-docker-compose up -d db
+docker-compose up -d db minio mailpit
 # Дождаться готовности БД, затем:
 docker-compose run --rm app alembic upgrade head
 docker-compose up app
 ```
+
+Приложение: `http://localhost:8000`. Письма с ссылками подтверждения регистрации отправляются в Mailpit (SMTP 1025); просмотр писем: **http://localhost:8025**.
 
 3. Локально (без Docker):
 
@@ -120,12 +122,12 @@ pytest tests/ -v
 
 ## Конфигурация (.env)
 
-- `DATABASE_URL` — PostgreSQL (async): `postgresql+asyncpg://user:pass@host:5432/db`
-- `DEEPSEEK_API_URL`, `DEEPSEEK_API_KEY` — API DeepSeek
-- `PROMPT_FILE` — путь к файлу системного промпта (относительно корня проекта или абсолютный)
-- `APP_HOST`, `APP_PORT` — хост и порт uvicorn
+Пароли и пользователи БД и MinIO задаются в `.env` (см. `.env.example`).
+
+- **БД:** `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` — пользователь, пароль и база PostgreSQL. `DATABASE_URL` — полная строка подключения (локально: `localhost`, в Docker: хост `db`).
+- **MinIO:** `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` — учётные данные MinIO; `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` — те же значения для приложения; `MINIO_ENDPOINT`, `MINIO_BUCKET`, `MINIO_SECURE`.
+- **LLM:** `DEEPSEEK_API_URL`, `DEEPSEEK_API_KEY`
+- **Приложение:** `PROMPT_FILE`, `APP_HOST`, `APP_PORT`
 - **Регистрация и email:**  
-  - `JWT_SECRET` — секрет для подписи JWT (обязательно сменить в продакшене)  
-  - `JWT_EXPIRE_MINUTES` — срок жизни токена (по умолчанию 10080 = 7 дней)  
-  - `FRONTEND_BASE_URL` — базовый URL для ссылки подтверждения в письме (например `http://localhost:8000`)  
-  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` — отправка писем. Если SMTP не задан, письмо выводится в консоль (для разработки).
+  - `JWT_SECRET`, `JWT_EXPIRE_MINUTES`, `FRONTEND_BASE_URL`  
+  - **SMTP:** в Docker поднимается контейнер **Mailpit** (SMTP 1025, Web UI 8025). Приложение шлёт письма с ссылками подтверждения в Mailpit; письма можно смотреть в браузере: **http://localhost:8025**. В `.env` для Docker: `SMTP_HOST=mailpit`, `SMTP_PORT=1025`. Для продакшена укажите свой SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`). Если SMTP не задан, письмо выводится в консоль.
