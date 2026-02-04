@@ -12,7 +12,11 @@ from app.config import settings
 from app.models import Tenant, TenantUser
 from app.services.email_service import send_confirmation_email
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__truncate_error=False,
+)
 
 CONFIRM_TOKEN_EXPIRE_HOURS = 24
 BCRYPT_MAX_PASSWORD_BYTES = 72
