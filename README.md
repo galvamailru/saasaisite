@@ -131,3 +131,25 @@ pytest tests/ -v
 - **Регистрация и email:**  
   - `JWT_SECRET`, `JWT_EXPIRE_MINUTES`, `FRONTEND_BASE_URL`  
   - **SMTP:** в Docker поднимается контейнер **Mailpit** (SMTP 1025, Web UI 8025). Приложение шлёт письма с ссылками подтверждения в Mailpit; письма можно смотреть в браузере: **http://localhost:8025**. В `.env` для Docker: `SMTP_HOST=mailpit`, `SMTP_PORT=1025`. Для продакшена укажите свой SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`). Если SMTP не задан, письмо выводится в консоль.
+
+## Устранение неполадок
+
+### `InvalidPasswordError: password authentication failed for user "cip"`
+
+Ошибка возникает, когда **пароль в `.env` не совпадает** с паролем, под которым PostgreSQL был впервые инициализирован в томе `pgdata`. При первом запуске контейнера `db` Postgres создаёт пользователя и пароль из переменных окружения и сохраняет данные в томе; при последующих запусках том уже содержит инициализированную БД, и смена `POSTGRES_PASSWORD` в `.env` **не меняет** пароль в БД.
+
+**Вариант 1 — вернуть старый пароль:**  
+Если помните пароль, под которым БД была создана изначально, задайте в `.env` те же значения: `POSTGRES_USER=cip`, `POSTGRES_PASSWORD=<тот_же_пароль>`, `POSTGRES_DB=cip`. В `docker-compose` приложение получает `DATABASE_URL` из этих переменных, поэтому они должны совпадать с учётными данными в томе.
+
+**Вариант 2 — пересоздать том (данные БД будут удалены):**
+
+```bash
+docker-compose down
+docker volume rm saasaisite_pgdata
+docker-compose up -d db minio mailpit
+# Дождаться готовности БД (healthcheck), затем:
+docker-compose run --rm app alembic upgrade head
+docker-compose up app
+```
+
+Имя тома может быть с префиксом папки (например `saasaisite_pgdata`). Проверить: `docker volume ls | grep pgdata`.
