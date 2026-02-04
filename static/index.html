@@ -3,10 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CIP</title>
+  <title>CIP — чат-сайт с AI</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 2rem; max-width: 640px; }
+    h1 { margin-bottom: 0.5rem; }
+    .links { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.5rem; }
+    .links a { padding: 0.5rem 1rem; background: #00acc1; color: #fff; text-decoration: none; border-radius: 8px; }
+    .links a:hover { background: #0097a7; }
+    .note { margin-top: 1.5rem; font-size: 0.9rem; color: #666; }
+  </style>
 </head>
 <body>
   <h1>CIP Backend</h1>
-  <p>Chat: <code>/{tenant_slug}/chat</code>. Cabinet: <code>/{tenant_slug}/my</code>. Register: <code>/{tenant_slug}/register</code>. Login: <code>/{tenant_slug}/login</code>. Confirm: <code>/{tenant_slug}/confirm?token=...</code>.</p>
+  <p>Чат-сайт с AI-агентом: чат для клиентов, личный кабинет для администратора.</p>
+  <p><strong>Демо-тенант (slug: demo):</strong></p>
+  <div class="links">
+    <a href="/demo/chat">Чат</a>
+    <a href="/demo/my">Кабинет</a>
+    <a href="/demo/register">Регистрация</a>
+    <a href="/demo/login">Вход</a>
+  </div>
+  <p class="note">Для другого тенанта замените <code>demo</code> в адресе на slug вашего тенанта.</p>
 </body>
 </html>
