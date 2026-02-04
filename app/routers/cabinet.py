@@ -93,9 +93,10 @@ async def get_cabinet_user(
     db: AsyncSession = Depends(get_db),
 ) -> str:
     """Личный кабинет только для зарегистрированных. Возвращает user_id после проверки TenantUser."""
-    tenant_id = request.path_params.get("tenant_id")
-    if not tenant_id:
+    tenant_id_raw = request.path_params.get("tenant_id")
+    if not tenant_id_raw:
         raise HTTPException(status_code=400, detail="tenant_id required")
+    tenant_id = tenant_id_raw if isinstance(tenant_id_raw, UUID) else UUID(str(tenant_id_raw))
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Требуется авторизация. Войдите в личный кабинет.")
     token = authorization[7:].strip()
@@ -103,7 +104,7 @@ async def get_cabinet_user(
     if not payload or str(payload.get("tenant_id")) != str(tenant_id):
         raise HTTPException(status_code=401, detail="Неверный или истёкший токен")
     user_id = str(payload["sub"])
-    user = await get_tenant_user_by_id(db, UUID(tenant_id), user_id)
+    user = await get_tenant_user_by_id(db, tenant_id, user_id)
     if not user or not user.email_confirmed_at:
         raise HTTPException(status_code=403, detail="Доступ только для зарегистрированных пользователей")
     return user_id
