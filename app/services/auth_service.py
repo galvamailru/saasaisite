@@ -15,14 +15,21 @@ from app.services.email_service import send_confirmation_email
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 CONFIRM_TOKEN_EXPIRE_HOURS = 24
+BCRYPT_MAX_PASSWORD_BYTES = 72
+
+
+def _truncate_for_bcrypt(password: str) -> str:
+    """Bcrypt accepts at most 72 bytes; truncate to avoid passlib error."""
+    raw = password.encode("utf-8")[:BCRYPT_MAX_PASSWORD_BYTES]
+    return raw.decode("utf-8", errors="ignore")
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return pwd_context.hash(_truncate_for_bcrypt(password))
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return pwd_context.verify(_truncate_for_bcrypt(plain), hashed)
 
 
 def create_jwt(user_id: str, tenant_id: str) -> str:
