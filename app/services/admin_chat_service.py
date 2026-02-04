@@ -66,7 +66,7 @@ async def _build_state(db: AsyncSession, tenant_id: UUID, user_id: str) -> str:
     return "\n".join(lines)
 
 
-def _parse_and_execute(
+async def _parse_and_execute(
     db: AsyncSession,
     tenant_id: UUID,
     user_id: str,
@@ -183,7 +183,7 @@ async def handle_admin_message(
     executed = []
     for m in EXECUTE_BLOCK_RE.finditer(reply):
         block = m.group(1).strip()
-        executed.extend(_parse_and_execute(db, tenant_id, user_id, block))
+        executed.extend(await _parse_and_execute(db, tenant_id, user_id, block))
 
     reply_clean = _strip_execute_blocks(reply)
     if executed:
