@@ -43,7 +43,6 @@
     <a href="#" data-page="my">Главная</a>
     <a href="#" data-page="dialogs">Мои диалоги</a>
     <a href="#" data-page="prompt">Промпт</a>
-    <a href="#" data-page="embed">Вставка на сайт</a>
     <a href="#" data-page="admin-chat">Админ-чат</a>
     <a href="#" data-page="leads">Лиды</a>
     <a href="#" data-page="profile">Профиль</a>
@@ -230,29 +229,6 @@
         });
       }
 
-      async function loadEmbed() {
-        if (!requireAuth()) return;
-        await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/embed', { headers: headers() });
-        if (!r.ok) {
-          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки.</p>';
-          return;
-        }
-        const data = await r.json();
-        const code = (data.iframe_code || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        document.getElementById('content').innerHTML =
-          '<h2>Вставка чата на сайт</h2>' +
-          '<p class="hint">Тенант: <strong>' + escapeHtml(tenantSlug) + '</strong>. В коде ниже URL чата: ваш публичный домен + <code>/' + escapeHtml(tenantSlug) + '/chat/embed</code>. Задайте в .env переменную <code>FRONTEND_BASE_URL</code> (например <code>https://ваш-домен.ru</code>), чтобы в коде был правильный адрес.</p>' +
-          '<p class="hint">Скопируйте код и вставьте в HTML вашего сайта. Ссылка iframe: <strong>' + escapeHtml(data.chat_url || '') + '</strong></p>' +
-          '<pre class="embed-code" id="embedCodePre">' + code + '</pre>' +
-          '<div class="embed-actions"><button type="button" id="copyEmbedBtn">Копировать код</button></div>';
-        document.getElementById('copyEmbedBtn').addEventListener('click', () => {
-          const pre = document.getElementById('embedCodePre');
-          const text = pre.textContent;
-          navigator.clipboard.writeText(text).then(() => alert('Код скопирован в буфер обмена.')).catch(() => alert('Не удалось скопировать.'));
-        });
-      }
-
       async function loadAdminChat() {
         if (!requireAuth()) return;
         await ensureTenant();
@@ -370,10 +346,24 @@
       async function loadMy() {
         if (!requireAuth()) return;
         await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/embed', { headers: headers() });
+        if (!r.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки.</p>';
+          return;
+        }
+        const data = await r.json();
+        const code = (data.iframe_code || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         document.getElementById('content').innerHTML =
           '<h2>Главная</h2>' +
-          '<p class="hint">Тестируйте бота в чате ниже. Диалоги сохраняются и отображаются в <a href="#" data-goto="dialogs">Мои диалоги</a>.</p>' +
-          '<iframe id="chatEmbedFrame" src="/' + tenantSlug + '/chat/embed" style="width:100%; height:75vh; border:1px solid #ddd; border-radius:12px;" title="Чат для теста"></iframe>';
+          '<p class="hint">Тестируйте бота в чате ниже. Диалоги — в <a href="#" data-goto="dialogs">Мои диалоги</a>.</p>' +
+          '<iframe id="chatEmbedFrame" src="/' + tenantSlug + '/chat/embed" style="width:100%; height:50vh; min-height:320px; border:1px solid #ddd; border-radius:12px;" title="Чат для теста"></iframe>' +
+          '<div class="embed-section" style="margin-top:1.5rem;">' +
+          '<h3 style="margin-top:0;">Вставка чата на ваш сайт</h3>' +
+          '<p class="hint">Тенант: <strong>' + escapeHtml(tenantSlug) + '</strong>. Код iframe с <code>data-tenant-id</code> и <code>data-tenant-slug</code>. Задайте в .env <code>FRONTEND_BASE_URL</code> для нужного домена.</p>' +
+          '<p class="hint">Скопируйте код и вставьте в HTML вашего сайта:</p>' +
+          '<pre class="embed-code" id="embedCodePre">' + code + '</pre>' +
+          '<div class="embed-actions"><button type="button" id="copyEmbedBtn">Копировать код</button></div>' +
+          '</div>';
         var frame = document.getElementById('chatEmbedFrame');
         if (frame) {
           frame.addEventListener('load', function() {
@@ -386,6 +376,14 @@
             } catch (_) {}
           });
         }
+        var copyBtn = document.getElementById('copyEmbedBtn');
+        if (copyBtn) {
+          copyBtn.addEventListener('click', function() {
+            var pre = document.getElementById('embedCodePre');
+            var text = pre ? pre.textContent : '';
+            navigator.clipboard.writeText(text).then(function() { alert('Код скопирован в буфер обмена.'); }).catch(function() { alert('Не удалось скопировать.'); });
+          });
+        }
       }
 
       function route() {
@@ -393,11 +391,10 @@
         const page = segs[2] || 'my';
         setLinks();
         renderAuthLinks();
-        if (page === 'my') loadMy();
+        if (page === 'my' || page === 'embed') loadMy();
         else if (page === 'dialogs' && segs[3]) loadDialogDetail(segs[3]);
         else if (page === 'dialogs') loadDialogs();
         else if (page === 'prompt') loadChunks();
-        else if (page === 'embed') loadEmbed();
         else if (page === 'admin-chat') loadAdminChat();
         else if (page === 'leads') loadLeads();
         else if (page === 'profile') loadProfile();

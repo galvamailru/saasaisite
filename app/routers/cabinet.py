@@ -331,7 +331,11 @@ async def get_embed_code(
     if not base_url:
         base_url = "https://YOUR_DOMAIN"
     chat_url = f"{base_url}/{tenant.slug}/chat/embed"
-    iframe_code = f'<iframe src="{chat_url}" width="400" height="600" frameborder="0" title="Чат"></iframe>'
+    iframe_code = (
+        f'<iframe src="{chat_url}" '
+        f'data-tenant-id="{tenant.id}" data-tenant-slug="{tenant.slug}" '
+        f'width="400" height="600" frameborder="0" title="Чат"></iframe>'
+    )
     return EmbedCodeResponse(chat_url=chat_url, iframe_code=iframe_code)
 
 

@@ -3,7 +3,7 @@ import traceback
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -113,8 +113,5 @@ async def serve_confirm(slug: str, db: AsyncSession = Depends(get_db)) -> FileRe
 
 @app.get("/")
 async def root():
-    """Отдельной главной страницы нет. Вход в админку: /{tenant_slug}/login или /{tenant_slug}/register."""
-    raise HTTPException(
-        status_code=404,
-        detail="Используйте адрес входа в кабинет: /{tenant_slug}/login или регистрации: /{tenant_slug}/register (например /demo/login)",
-    )
+    """Отдельной главной страницы нет. Редирект на вход демо-тенанта."""
+    return RedirectResponse(url="/demo/login", status_code=302)
