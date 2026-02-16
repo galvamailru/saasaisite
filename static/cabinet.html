@@ -45,7 +45,7 @@
     <a href="#" data-page="prompt">Промпт</a>
     <a href="#" data-page="embed">Вставка на сайт</a>
     <a href="#" data-page="admin-chat">Админ-чат</a>
-    <a href="#" data-page="saved">Сохранённое</a>
+    <a href="#" data-page="leads">Лиды</a>
     <a href="#" data-page="profile">Профиль</a>
     <span id="authLinks"></span>
   </nav>
@@ -127,7 +127,32 @@
         let html = '<h2>Мои диалоги</h2><ul class="list">';
         for (const d of data.items || []) {
           const preview = (d.preview || '').slice(0, 60) + (d.preview && d.preview.length > 60 ? '…' : '');
-          html += '<li><a href="/' + tenantSlug + '/my/dialogs">' + (d.id || '') + '</a> ' + (d.updated_at || '') + ' — ' + preview + '</li>';
+          html += '<li><a href="#" class="dialog-link" data-dialog-id="' + (d.id || '') + '">' + (d.id || '') + '</a> ' + (d.updated_at || '') + ' — ' + escapeHtml(preview) + '</li>';
+        }
+        html += '</ul>';
+        document.getElementById('content').innerHTML = html;
+        document.getElementById('content').querySelectorAll('a.dialog-link').forEach(function(a) {
+          a.addEventListener('click', function(e) {
+            e.preventDefault();
+            const id = a.getAttribute('data-dialog-id');
+            window.history.pushState({}, '', '/' + tenantSlug + '/my/dialogs/' + id);
+            route();
+          });
+        });
+      }
+
+      async function loadDialogDetail(dialogId) {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/dialogs/' + dialogId, { headers: headers() });
+        if (!r.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Диалог не найден.</p><p><a href="#" data-goto="dialogs">← Мои диалоги</a></p>';
+          return;
+        }
+        const d = await r.json();
+        let html = '<h2>Диалог</h2><p><a href="#" data-goto="dialogs">← Мои диалоги</a></p><ul class="list">';
+        for (const m of (d.messages || [])) {
+          html += '<li><strong>' + escapeHtml(m.role || '') + ':</strong> ' + escapeHtml((m.content || '').slice(0, 500)) + (m.content && m.content.length > 500 ? '…' : '') + '</li>';
         }
         html += '</ul>';
         document.getElementById('content').innerHTML = html;
@@ -277,21 +302,46 @@
         });
       }
 
-      async function loadSaved() {
+      function escapeHtml(s) {
+        if (s == null) return '';
+        const div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+      }
+
+      async function loadLeads() {
         if (!requireAuth()) return;
         await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/saved?limit=50&offset=0', { headers: headers() });
+        const r = await fetch(base + '/' + tenantId + '/me/leads?limit=50&offset=0', { headers: headers() });
         if (!r.ok) {
-          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки сохранённого</p>';
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки лидов.</p>';
           return;
         }
-        const items = await r.json();
-        let html = '<h2>Сохранённое</h2><ul class="list">';
-        for (const i of items) {
-          html += '<li>' + (i.type || '') + ' — ' + (i.reference_id || '') + ' (' + (i.created_at || '') + ')</li>';
+        const leads = await r.json();
+        let html = '<h2>Лиды</h2>';
+        html += '<p class="hint">Контакты (email, телефон), оставленные посетителями в чате. Один лид на диалог.</p>';
+        if (leads.length === 0) {
+          html += '<p>Нет лидов</p>';
+        } else {
+          html += '<ul class="list leads-list">';
+          for (const l of leads) {
+            html += '<li class="lead-item">';
+            html += '<span class="contact">' + escapeHtml(l.contact_text) + '</span>';
+            html += '<div class="meta">user: ' + escapeHtml(l.user_id) + ' · диалог: <a href="#" class="lead-dialog-link" data-dialog-id="' + escapeHtml(l.dialog_id) + '">' + escapeHtml(l.dialog_id) + '</a></div>';
+            html += '<div class="meta">' + (l.updated_at || l.created_at || '') + '</div>';
+            html += '</li>';
+          }
+          html += '</ul>';
         }
-        html += '</ul>';
         document.getElementById('content').innerHTML = html;
+        document.getElementById('content').querySelectorAll('a.lead-dialog-link').forEach(function(a) {
+          a.addEventListener('click', function(e) {
+            e.preventDefault();
+            const dialogId = a.getAttribute('data-dialog-id');
+            window.history.pushState({}, '', '/' + tenantSlug + '/my/dialogs/' + dialogId);
+            route();
+          });
+        });
       }
 
       async function loadProfile() {
@@ -307,18 +357,29 @@
           '<h2>Профиль</h2><p>user_id: ' + (p.user_id || '') + '</p><p>Имя: ' + (p.display_name || '—') + '</p><p>Контакт: ' + (p.contact || '—') + '</p>';
       }
 
+      async function loadMy() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        document.getElementById('content').innerHTML =
+          '<h2>Главная</h2>' +
+          '<p class="hint">Тестируйте бота в чате ниже. Диалоги сохраняются и отображаются в <a href="#" data-goto="dialogs">Мои диалоги</a>.</p>' +
+          '<iframe src="/' + tenantSlug + '/chat/embed" style="width:100%; height:75vh; border:1px solid #ddd; border-radius:12px;" title="Чат для теста"></iframe>';
+      }
+
       function route() {
         const segs = window.location.pathname.split('/').filter(Boolean);
         const page = segs[2] || 'my';
         setLinks();
         renderAuthLinks();
-        if (page === 'dialogs') loadDialogs();
+        if (page === 'my') loadMy();
+        else if (page === 'dialogs' && segs[3]) loadDialogDetail(segs[3]);
+        else if (page === 'dialogs') loadDialogs();
         else if (page === 'prompt') loadChunks();
         else if (page === 'embed') loadEmbed();
         else if (page === 'admin-chat') loadAdminChat();
-        else if (page === 'saved') loadSaved();
+        else if (page === 'leads') loadLeads();
         else if (page === 'profile') loadProfile();
-        else loadDialogs();
+        else loadMy();
       }
 
       document.querySelectorAll('nav a[data-page]').forEach(a => {

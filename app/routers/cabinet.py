@@ -11,6 +11,7 @@ from app.schemas import (
     DialogDetailResponse,
     DialogListResponse,
     DialogListItem,
+    LeadResponse,
     MessageInDialog,
     ProfileResponse,
     ProfileUpdate,
@@ -296,6 +297,22 @@ async def delete_prompt_chunk(
     ok = await delete_chunk(db, tenant_id, chunk_id)
     if not ok:
         raise HTTPException(status_code=404, detail="chunk not found")
+
+
+# Лиды (контакты из диалогов)
+@router.get("/{tenant_id:uuid}/me/leads", response_model=list[LeadResponse])
+async def list_user_leads(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    _, items = await list_leads(db, tenant_id, limit=limit, offset=offset)
+    return [LeadResponse.model_validate(l) for l in items]
 
 
 # Embed: код iframe для вставки чата на сайт

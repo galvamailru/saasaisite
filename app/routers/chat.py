@@ -10,6 +10,7 @@ from app.database import get_db
 from app.llm_client import stream_chat
 from app.schemas import ChatRequest
 from app.services.chat_service import get_or_create_dialog, get_dialog_messages_for_llm, save_message
+from app.services.leads import save_lead_if_contact
 from app.services.prompt_loader import load_prompt_for_tenant
 from app.services.cabinet_service import get_tenant_by_id
 
@@ -30,6 +31,7 @@ async def _sse_stream(tenant_id: UUID, user_id: str, dialog_id: UUID | None, mes
     history = await get_dialog_messages_for_llm(db, dialog.id)
     history.append({"role": "user", "content": message_text})
     await save_message(db, tenant_id, user_id, dialog.id, "user", message_text)
+    await save_lead_if_contact(db, tenant_id, user_id, dialog.id, message_text)
     full_response: list[str] = []
     try:
         async for chunk in stream_chat(prompt, history):

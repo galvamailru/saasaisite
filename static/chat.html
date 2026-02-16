@@ -235,10 +235,10 @@
   <script>
     (function () {
       const path = window.location.pathname;
-      const slugMatch = path.match(/^\/([^/]+)\/chat\/?$/);
+      const slugMatch = path.match(/^\/([^/]+)\/chat(?:\/embed)?\/?$/);
       const tenantSlug = slugMatch ? slugMatch[1] : null;
       if (!tenantSlug) {
-        document.getElementById('messages').innerHTML = '<p style="padding:1rem">Неверный URL. Ожидается /{tenant_slug}/chat</p>';
+        document.getElementById('messages').innerHTML = '<p style="padding:1rem">Неверный URL. Ожидается /{tenant_slug}/chat или /{tenant_slug}/chat/embed</p>';
         return;
       }
 
@@ -412,9 +412,10 @@
             assistantEl.innerHTML = filesProcessed.html || '—';
             filesProcessed.files.forEach(f => addContentCard(f.name, f.url));
             try {
-              const j = await fetch('/api/v1/tenants/' + tenantId + '/me/dialogs?limit=1', {
-                headers: { 'X-User-Id': userId },
-              }).then(r => r.json());
+              const h = { 'X-User-Id': userId };
+              const token = localStorage.getItem('cip_access_token');
+              if (token) h['Authorization'] = 'Bearer ' + token;
+              const j = await fetch('/api/v1/tenants/' + tenantId + '/me/dialogs?limit=1', { headers: h }).then(r => r.json());
               if (j.items && j.items[0]) dialogId = j.items[0].id;
             } catch (_) {}
           }

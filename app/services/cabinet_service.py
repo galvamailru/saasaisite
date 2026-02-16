@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Dialog, Message, SavedItem, UserProfile
+from app.models import Dialog, Lead, Message, SavedItem, UserProfile
 
 
 PREVIEW_MAX_LEN = 120
@@ -120,6 +120,25 @@ async def get_saved_by_id(
         )
     )
     return result.scalar_one_or_none()
+
+
+async def list_leads(
+    db: AsyncSession,
+    tenant_id: UUID,
+    limit: int,
+    offset: int,
+) -> tuple[int, list]:
+    count_q = select(func.count()).select_from(Lead).where(Lead.tenant_id == tenant_id)
+    total = (await db.execute(count_q)).scalar() or 0
+    q = (
+        select(Lead)
+        .where(Lead.tenant_id == tenant_id)
+        .order_by(Lead.updated_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(q)
+    return total, list(result.scalars().all())
 
 
 async def get_profile(db: AsyncSession, tenant_id: UUID, user_id: str) -> UserProfile | None:

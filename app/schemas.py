@@ -116,6 +116,19 @@ class PromptChunkUpdate(BaseModel):
     position: int | None = None
 
 
+# Cabinet: leads (contacts from dialogs)
+class LeadResponse(BaseModel):
+    id: UUID
+    user_id: str
+    dialog_id: UUID
+    contact_text: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # Cabinet: embed code for iframe
 class EmbedCodeResponse(BaseModel):
     """URL чата для iframe и готовый HTML-код для вставки."""

@@ -1,9 +1,8 @@
-"""SQLAlchemy models: tenant, dialog, message, saved_item, user_profile, prompt_chunk.
-Расширяемость: галереи, RAG, MCP добавляются отдельными модулями без изменения core."""
+"""SQLAlchemy models: tenant, dialog, message, saved_item, user_profile, prompt_chunk, lead."""
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -27,6 +26,7 @@ class Tenant(Base):
     user_profiles = relationship("UserProfile", back_populates="tenant")
     tenant_users = relationship("TenantUser", back_populates="tenant")
     prompt_chunks = relationship("PromptChunk", back_populates="tenant", order_by="PromptChunk.position")
+    leads = relationship("Lead", back_populates="tenant")
 
 
 class TenantUser(Base):
@@ -143,3 +143,25 @@ class PromptChunk(Base):
     __table_args__ = (
         Index("ix_prompt_chunk_tenant_position", "tenant_id", "position"),
     )
+
+
+class Lead(Base):
+    """Лиды: контакты из диалогов (email, телефон). Один лид на сессию (tenant_id, user_id, dialog_id)."""
+    __tablename__ = "lead"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_id", "dialog_id", name="uq_lead_tenant_user_dialog"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    dialog_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("dialog.id", ondelete="CASCADE"), nullable=False
+    )
+    contact_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="leads")
