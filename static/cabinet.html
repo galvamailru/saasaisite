@@ -74,6 +74,12 @@
     .leads-list .lead-item .contact { font-weight: 600; font-size: 1rem; color: #333; }
     .leads-list .lead-item .meta { font-size: 0.85rem; color: #666; margin-top: 0.35rem; }
     .leads-list .lead-item .lead-date { font-weight: 500; color: #00acc1; margin-top: 0.25rem; }
+    .admin-prompt-system { margin-bottom: 1.5rem; }
+    .admin-prompt-system label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: #333; }
+    .admin-prompt-system textarea { width: 100%; min-height: 200px; font-size: 0.9rem; padding: 0.75rem; border: 1px solid #ccc; border-radius: 8px; resize: vertical; }
+    .admin-chunk-card { border: 1px solid #b2ebf2; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; background: #f0f9fa; }
+    .admin-chunk-card .chunk-question-input { margin-bottom: 0.5rem; }
+    .admin-chunk-card textarea { min-height: 100px; }
   </style>
 </head>
 <body>
@@ -81,6 +87,7 @@
     <a href="#" data-page="my">Главная</a>
     <a href="#" data-page="dialogs">Диалоги</a>
     <a href="#" data-page="prompt">Промпт</a>
+    <a href="#" data-page="admin-prompt">Промпт админ-бота</a>
     <a href="#" data-page="leads">Лиды</a>
     <a href="#" data-page="profile">Профиль</a>
     <span id="authLinks"></span>
@@ -204,7 +211,6 @@
             var uidShort = uid.length > 20 ? uid.slice(0, 18) + '…' : uid;
             html += '<span class="user-id" title="' + escapeHtml(uid) + '">Посетитель: ' + escapeHtml(uidShort || '—') + '</span>';
             html += '</div>';
-            html += '<div class="dialog-preview">' + escapeHtml(preview) + '</div>';
             html += '</div>';
           }
           html += '</div>';
@@ -326,6 +332,105 @@
             if (!res.ok) { alert('Ошибка'); return; }
             loadChunks();
           });
+        });
+      }
+
+      async function loadAdminPrompt() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const [rPrompt, rChunks] = await Promise.all([
+          fetch(base + '/' + tenantId + '/me/admin-prompt', { headers: headers() }),
+          fetch(base + '/' + tenantId + '/me/admin-prompt/chunks', { headers: headers() })
+        ]);
+        if (!rPrompt.ok || !rChunks.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки. Войдите в кабинет.</p>';
+          return;
+        }
+        const promptData = await rPrompt.json();
+        const chunks = await rChunks.json();
+        const systemEsc = (promptData.system_prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        let html = '<h2>Промпт админ-бота</h2>';
+        html += '<p class="hint">Системный промпт и чанки (вопрос пользователю + детальное описание). Если пусто — используется промпт из файла. Админ-бот задаёт вопросы по очереди и генерирует чанки промпта клиентского бота.</p>';
+        html += '<div class="admin-prompt-system">';
+        html += '<label>Системный промпт</label>';
+        html += '<textarea id="adminSystemPrompt" placeholder="Базовые инструкции для админ-помощника...">' + systemEsc + '</textarea>';
+        html += '<button type="button" id="saveAdminSystemPrompt" style="margin-top:0.5rem;">Сохранить системный промпт</button>';
+        html += '</div>';
+        html += '<h3>Чанки (вопрос + описание)</h3>';
+        html += '<p class="hint">Каждый чанк: вопрос, который бот задаёт пользователю, и детальное описание того, что скрывается под этим вопросом (для контекста модели).</p>';
+        for (const c of chunks) {
+          const qEsc = (c.question || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+          const contentEsc = (c.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+          html += '<div class="admin-chunk-card chunk-card" data-admin-chunk-id="' + c.id + '">';
+          html += '<div class="chunk-meta">№' + c.position + ' · id: ' + c.id + '</div>';
+          html += '<div class="chunk-question-label">Вопрос пользователю:</div>';
+          html += '<input type="text" class="chunk-question-input admin-chunk-question" data-admin-chunk-id="' + c.id + '" placeholder="Вопрос, который задаёт админ-бот" maxlength="1000" value="' + qEsc + '">';
+          html += '<div class="chunk-question-label">Описание (что скрывается под этим вопросом):</div>';
+          html += '<textarea class="admin-chunk-content" data-admin-chunk-id="' + c.id + '" placeholder="Детальное описание для контекста модели">' + contentEsc + '</textarea>';
+          html += '<div class="chunk-actions"><button type="button" class="saveAdminChunk" data-admin-chunk-id="' + c.id + '">Сохранить</button><button type="button" class="delete deleteAdminChunk" data-admin-chunk-id="' + c.id + '">Удалить</button></div>';
+          html += '</div>';
+        }
+        html += '<div class="add-chunk-box"><p>Добавить чанк:</p>';
+        html += '<input type="text" id="newAdminChunkQuestion" placeholder="Вопрос пользователю" maxlength="1000" style="width:100%;margin-bottom:0.5rem;">';
+        html += '<textarea id="newAdminChunkContent" placeholder="Детальное описание (что скрывается под этим вопросом)" style="width:100%;min-height:120px;"></textarea>';
+        html += '<button type="button" id="addAdminChunkBtn" style="margin-top:0.5rem;">Добавить чанк</button></div>';
+        document.getElementById('content').innerHTML = html;
+
+        document.getElementById('saveAdminSystemPrompt').addEventListener('click', async () => {
+          const text = document.getElementById('adminSystemPrompt').value;
+          const res = await fetch(base + '/' + tenantId + '/me/admin-prompt', {
+            method: 'PATCH',
+            headers: headers(true),
+            body: JSON.stringify({ system_prompt: text })
+          });
+          if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
+          alert('Системный промпт сохранён.');
+        });
+
+        document.getElementById('content').querySelectorAll('.saveAdminChunk').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const cid = btn.getAttribute('data-admin-chunk-id');
+            const qi = document.querySelector('.admin-chunk-question[data-admin-chunk-id="' + cid + '"]');
+            const ta = document.querySelector('.admin-chunk-content[data-admin-chunk-id="' + cid + '"]');
+            const question = qi ? qi.value.trim() : '';
+            const content = ta ? ta.value.trim() : '';
+            if (!content) { alert('Описание не может быть пустым'); return; }
+            const res = await fetch(base + '/' + tenantId + '/me/admin-prompt/chunks/' + cid, {
+              method: 'PATCH',
+              headers: headers(true),
+              body: JSON.stringify({ content: content, question: question || null })
+            });
+            if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
+            loadAdminPrompt();
+          });
+        });
+
+        document.getElementById('content').querySelectorAll('.deleteAdminChunk').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('Удалить этот чанк?')) return;
+            const cid = btn.getAttribute('data-admin-chunk-id');
+            const res = await fetch(base + '/' + tenantId + '/me/admin-prompt/chunks/' + cid, {
+              method: 'DELETE',
+              headers: headers()
+            });
+            if (!res.ok) { alert('Ошибка'); return; }
+            loadAdminPrompt();
+          });
+        });
+
+        document.getElementById('addAdminChunkBtn').addEventListener('click', async () => {
+          const question = document.getElementById('newAdminChunkQuestion').value.trim() || undefined;
+          const content = document.getElementById('newAdminChunkContent').value.trim();
+          if (!content) { alert('Введите описание чанка'); return; }
+          const res = await fetch(base + '/' + tenantId + '/me/admin-prompt/chunks', {
+            method: 'POST',
+            headers: headers(true),
+            body: JSON.stringify({ content: content, question: question || null })
+          });
+          if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
+          document.getElementById('newAdminChunkQuestion').value = '';
+          document.getElementById('newAdminChunkContent').value = '';
+          loadAdminPrompt();
         });
       }
 
@@ -545,6 +650,7 @@
         else if (page === 'dialogs' && segs[3]) loadDialogDetail(segs[3]);
         else if (page === 'dialogs') loadDialogs();
         else if (page === 'prompt') loadChunks();
+        else if (page === 'admin-prompt') loadAdminPrompt();
         else if (page === 'leads') loadLeads();
         else if (page === 'profile') loadProfile();
         else loadMy();

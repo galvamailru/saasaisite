@@ -123,6 +123,39 @@ class PromptChunkUpdate(BaseModel):
     position: int | None = None
 
 
+# Cabinet: admin bot prompt (system + chunks: question + detailed description)
+class AdminPromptResponse(BaseModel):
+    """Текущий системный промпт админ-бота."""
+    system_prompt: str | None = None
+
+
+class AdminPromptUpdate(BaseModel):
+    """Обновление системного промпта админ-бота."""
+    system_prompt: str | None = None
+
+
+class AdminPromptChunkResponse(BaseModel):
+    id: UUID
+    position: int
+    question: str | None = None
+    content: str
+
+    class Config:
+        from_attributes = True
+
+
+class AdminPromptChunkCreate(BaseModel):
+    content: str = Field(..., min_length=1)
+    question: str | None = Field(None, max_length=1000)
+    position: int | None = None
+
+
+class AdminPromptChunkUpdate(BaseModel):
+    content: str | None = None
+    question: str | None = Field(None, max_length=1000)
+    position: int | None = None
+
+
 # Cabinet: leads (contacts from dialogs)
 class LeadResponse(BaseModel):
     id: UUID

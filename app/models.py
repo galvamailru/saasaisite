@@ -29,6 +29,10 @@ class Tenant(Base):
     user_profiles = relationship("UserProfile", back_populates="tenant")
     tenant_users = relationship("TenantUser", back_populates="tenant")
     prompt_chunks = relationship("PromptChunk", back_populates="tenant", order_by="PromptChunk.position")
+    admin_system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    admin_prompt_chunks = relationship(
+        "AdminPromptChunk", back_populates="tenant", order_by="AdminPromptChunk.position"
+    )
     leads = relationship("Lead", back_populates="tenant")
 
 
@@ -147,6 +151,25 @@ class PromptChunk(Base):
 
     __table_args__ = (
         Index("ix_prompt_chunk_tenant_position", "tenant_id", "position"),
+    )
+
+
+class AdminPromptChunk(Base):
+    """Чанк промпта админ-бота: вопрос пользователю (question) и детальное описание (content). Порядок по position."""
+    __tablename__ = "admin_prompt_chunk"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    question: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+
+    tenant = relationship("Tenant", back_populates="admin_prompt_chunks")
+
+    __table_args__ = (
+        Index("ix_admin_prompt_chunk_tenant_position", "tenant_id", "position"),
     )
 
 

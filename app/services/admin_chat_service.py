@@ -6,15 +6,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm_client import chat_once
 from app.services.prompt_chunk_service import list_chunks, create_chunk, update_chunk, delete_chunk
-from app.services.prompt_loader import load_admin_prompt, load_prompt
+from app.services.prompt_loader import load_admin_prompt
 from app.services.cabinet_service import get_tenant_by_id
+from app.services.admin_prompt_service import (
+    get_admin_system_prompt,
+    list_admin_chunks,
+    build_admin_prompt_from_chunks,
+)
 
 EXECUTE_BLOCK_RE = re.compile(r"\[EXECUTE\](.*?)\[/EXECUTE\]", re.DOTALL | re.IGNORECASE)
 
 ADMIN_SYSTEM_PROMPT_FALLBACK = """Ты — Админ-помощник. Только помощь в заполнении промпта чат-бота чанками (до 2000 символов каждый). Веди диалог пошагово, задавай уточняющие вопросы (роль бота, стиль, ограничения), предлагай формулировки чанков. При согласии добавляй в конец ответа блок [EXECUTE]...[/EXECUTE]. Команды: ADD_CHUNK, EDIT_CHUNK <id> <текст>, DELETE_CHUNK <id>. Администратор команд не вводит."""
 
 
-def _get_admin_prompt() -> str:
+async def _get_admin_prompt_assembled(db: AsyncSession, tenant_id: UUID) -> str:
+    """Собирает системный промпт админ-бота: из БД (tenant.admin_system_prompt + чанки) или из файла."""
+    system = await get_admin_system_prompt(db, tenant_id)
+    chunks = await list_admin_chunks(db, tenant_id)
+    chunks_text = build_admin_prompt_from_chunks(chunks)
+    if system or chunks_text:
+        parts = [system.strip() if system else ""]
+        if chunks_text.strip():
+            parts.append(chunks_text.strip())
+        return "\n\n---\n\n".join(p for p in parts if p)
     try:
         return load_admin_prompt()
     except FileNotFoundError:
@@ -122,7 +136,7 @@ async def handle_admin_message(
         return "Напишите, чем могу помочь: добавить или изменить чанки промпта бота для клиентов?"
 
     state = await _build_state(db, tenant_id, user_id)
-    system_prompt = _get_admin_prompt()
+    system_prompt = await _get_admin_prompt_assembled(db, tenant_id)
     system_with_state = system_prompt.rstrip() + "\n\n---\n" + state
 
     messages = []
