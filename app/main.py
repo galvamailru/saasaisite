@@ -106,4 +106,8 @@ async def serve_confirm(slug: str, db: AsyncSession = Depends(get_db)) -> FileRe
 
 @app.get("/")
 async def root():
-    return FileResponse(STATIC_DIR / "index.html") if (STATIC_DIR / "index.html").exists() else {"app": "CIP"}
+    """Отдельной главной страницы нет. Вход в админку: /{tenant_slug}/login или /{tenant_slug}/register."""
+    raise HTTPException(
+        status_code=404,
+        detail="Используйте адрес входа в кабинет: /{tenant_slug}/login или регистрации: /{tenant_slug}/register (например /demo/login)",
+    )
