@@ -33,6 +33,7 @@ class ChatRequest(BaseModel):
     user_id: str = Field(..., min_length=1, max_length=64)
     message: str = Field(..., min_length=1)
     dialog_id: UUID | None = None
+    is_test: bool = False  # режим теста в админке — не сохранять диалоги/сообщения в БД
 
 
 # Cabinet: dialogs

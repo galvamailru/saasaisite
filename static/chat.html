@@ -247,6 +247,7 @@
       let userId = localStorage.getItem('cip_user_id') || 'anon-' + Math.random().toString(36).slice(2, 12);
       localStorage.setItem('cip_user_id', userId);
       let dialogId = null;
+      let isTestMode = false;
 
       window.addEventListener('message', function(event) {
         if (event.origin !== window.location.origin) return;
@@ -254,6 +255,7 @@
           userId = event.data.user_id;
           localStorage.setItem('cip_user_id', userId);
           localStorage.setItem('cip_access_token', event.data.token);
+          if (event.data.is_test === true) isTestMode = true;
         }
       });
 
@@ -382,6 +384,7 @@
         try {
           const body = { user_id: userId, message: text };
           if (dialogId) body.dialog_id = dialogId;
+          if (isTestMode) body.is_test = true;
           const res = await fetch('/api/v1/tenants/' + tenantId + '/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -420,13 +423,15 @@
             filesProcessed = linkifyAndStripFiles(full);
             assistantEl.innerHTML = filesProcessed.html || '—';
             filesProcessed.files.forEach(f => addContentCard(f.name, f.url));
-            try {
-              const h = { 'X-User-Id': userId };
-              const token = localStorage.getItem('cip_access_token');
-              if (token) h['Authorization'] = 'Bearer ' + token;
-              const j = await fetch('/api/v1/tenants/' + tenantId + '/me/dialogs?limit=1', { headers: h }).then(r => r.json());
-              if (j.items && j.items[0]) dialogId = j.items[0].id;
-            } catch (_) {}
+            if (!isTestMode) {
+              try {
+                const h = { 'X-User-Id': userId };
+                const token = localStorage.getItem('cip_access_token');
+                if (token) h['Authorization'] = 'Bearer ' + token;
+                const j = await fetch('/api/v1/tenants/' + tenantId + '/me/dialogs?limit=1', { headers: h }).then(r => r.json());
+                if (j.items && j.items[0]) dialogId = j.items[0].id;
+              } catch (_) {}
+            }
           }
         } finally {
           sendBtn.disabled = false;
