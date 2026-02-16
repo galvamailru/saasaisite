@@ -11,7 +11,7 @@ from app.services.cabinet_service import get_tenant_by_id
 
 EXECUTE_BLOCK_RE = re.compile(r"\[EXECUTE\](.*?)\[/EXECUTE\]", re.DOTALL | re.IGNORECASE)
 
-ADMIN_SYSTEM_PROMPT_FALLBACK = """Ты — контент-менеджер в кабинете владельца чат-сайта. Промпт бота для клиентов состоит из чанков (до 500 символов каждый). Веди диалог: спрашивай, чем помочь, предлагай добавить или изменить чанки. Когда администратор согласен — выполняй действие, добавив в конец ответа блок [EXECUTE]...[/EXECUTE]. Команды: ADD_CHUNK <текст до 500 символов>, EDIT_CHUNK <id_чанка> <новый текст>, DELETE_CHUNK <id_чанка>. Администратор команд не вводит."""
+ADMIN_SYSTEM_PROMPT_FALLBACK = """Ты — Админ-помощник. Только помощь в заполнении промпта чат-бота чанками (до 2000 символов каждый). Веди диалог пошагово, задавай уточняющие вопросы (роль бота, стиль, ограничения), предлагай формулировки чанков. При согласии добавляй в конец ответа блок [EXECUTE]...[/EXECUTE]. Команды: ADD_CHUNK, EDIT_CHUNK <id> <текст>, DELETE_CHUNK <id>. Администратор команд не вводит."""
 
 
 def _get_admin_prompt() -> str:
@@ -27,12 +27,15 @@ async def _build_state(db: AsyncSession, tenant_id: UUID, user_id: str) -> str:
     if not tenant:
         return ""
     chunks = await list_chunks(db, tenant_id)
-    lines = ["Текущее состояние (промпт бота для клиентов — чанки до 500 символов):"]
+    lines = ["Текущее состояние (промпт бота для клиентов — чанки до 2000 символов):"]
     if not chunks:
         lines.append("  (пока нет чанков; добавьте в разделе «Промпт» или через этот чат.)")
     else:
         for c in chunks:
-            lines.append(f"  [id={c.id}] position={c.position}: { (c.content or '')[:200] }{'...' if len(c.content or '') > 200 else ''}")
+            q = (c.question or "").strip()
+            q_part = f' вопрос: "{q[:80]}{"…" if len(q) > 80 else ""}" |' if q else " "
+            prev = (c.content or "")[:150] + ("..." if len(c.content or "") > 150 else "")
+            lines.append(f"  [id={c.id}] position={c.position} |{q_part} ответ: {prev}")
     return "\n".join(lines)
 
 
@@ -51,16 +54,21 @@ async def _parse_and_execute(
     results = []
     try:
         if cmd == "ADD_CHUNK":
-            text = payload[:500].strip()
-            if not text:
-                results.append("Ошибка: укажите текст чанка (до 500 символов).")
+            lines = [s for s in payload.split("\n") if s is not None]
+            question: str | None = (lines[0].strip()[:1000] if lines and lines[0].strip() else None)
+            if len(lines) > 1:
+                content = "\n".join(lines[1:]).strip()[:2000]
             else:
-                chunk = await create_chunk(db, tenant_id, text, position=None)
+                content = (lines[0].strip() if lines else "")[:2000]
+            if not content:
+                results.append("Ошибка: укажите текст чанка (ответ пользователя). После первой строки можно указать вопрос админа.")
+            else:
+                chunk = await create_chunk(db, tenant_id, content, position=None, question=question)
                 results.append(f"Чанк добавлен (id: {chunk.id}).")
         elif cmd == "EDIT_CHUNK":
             parts = payload.split(None, 1)
             chunk_id_s = (parts[0] or "").strip()
-            new_text = (parts[1] or "").strip()[:500] if len(parts) > 1 else ""
+            new_text = (parts[1] or "").strip()[:2000] if len(parts) > 1 else ""
             if not chunk_id_s:
                 results.append("Ошибка: укажите id чанка в EDIT_CHUNK.")
             else:

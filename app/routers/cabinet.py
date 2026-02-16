@@ -295,7 +295,7 @@ async def update_user_profile(
     )
 
 
-# Prompt chunks (max 500 chars each)
+# Prompt chunks (max 2000 chars each)
 @router.get("/{tenant_id:uuid}/me/prompt/chunks", response_model=list[PromptChunkResponse])
 async def list_prompt_chunks(
     tenant_id: UUID,
@@ -306,7 +306,7 @@ async def list_prompt_chunks(
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     chunks = await list_chunks(db, tenant_id)
-    return [PromptChunkResponse(id=c.id, position=c.position, content=c.content) for c in chunks]
+    return [PromptChunkResponse(id=c.id, position=c.position, question=c.question, content=c.content) for c in chunks]
 
 
 @router.post("/{tenant_id:uuid}/me/prompt/chunks", response_model=PromptChunkResponse, status_code=201)
@@ -320,10 +320,10 @@ async def create_prompt_chunk(
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     try:
-        chunk = await create_chunk(db, tenant_id, body.content, body.position)
+        chunk = await create_chunk(db, tenant_id, body.content, body.position, body.question)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return PromptChunkResponse(id=chunk.id, position=chunk.position, content=chunk.content)
+    return PromptChunkResponse(id=chunk.id, position=chunk.position, question=chunk.question, content=chunk.content)
 
 
 @router.patch("/{tenant_id:uuid}/me/prompt/chunks/{chunk_id:uuid}", response_model=PromptChunkResponse)
@@ -337,10 +337,12 @@ async def patch_prompt_chunk(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    chunk = await update_chunk(db, tenant_id, chunk_id, content=body.content, position=body.position)
+    chunk = await update_chunk(
+        db, tenant_id, chunk_id, content=body.content, position=body.position, question=body.question
+    )
     if not chunk:
         raise HTTPException(status_code=404, detail="chunk not found")
-    return PromptChunkResponse(id=chunk.id, position=chunk.position, content=chunk.content)
+    return PromptChunkResponse(id=chunk.id, position=chunk.position, question=chunk.question, content=chunk.content)
 
 
 @router.delete("/{tenant_id:uuid}/me/prompt/chunks/{chunk_id:uuid}", status_code=204)

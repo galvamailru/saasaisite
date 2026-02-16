@@ -16,6 +16,8 @@
     .hint { font-size: 0.9rem; color: #555; margin-bottom: 0.75rem; }
     .hint a { color: #00acc1; }
     .chunk-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; background: #fafafa; }
+    .chunk-question-label { font-size: 0.8rem; color: #00acc1; font-weight: 600; margin-bottom: 0.25rem; }
+    .chunk-card .chunk-question-input { width: 100%; font-size: 0.85rem; padding: 0.4rem 0.5rem; border: 1px solid #b2ebf2; border-radius: 4px; margin-bottom: 0.5rem; }
     .chunk-card textarea { width: 100%; min-height: 80px; font-size: 0.9rem; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
     .chunk-meta { font-size: 0.85rem; color: #666; margin-bottom: 0.5rem; }
     .chunk-actions { margin-top: 0.5rem; }
@@ -66,6 +68,7 @@
     .dialog-card .dialog-meta .date { font-weight: 600; color: #333; }
     .dialog-card .dialog-meta .msg-count { color: #00acc1; }
     .dialog-card .dialog-meta .lead-badge { color: #2e7d32; font-weight: 600; }
+    .dialog-card .dialog-meta .user-id { font-weight: normal; color: #666; font-size: 0.8rem; }
     .dialog-card .dialog-preview { font-size: 0.9rem; color: #555; line-height: 1.4; }
     .leads-list .lead-item { padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid #e0e0e0; margin-bottom: 0.75rem; background: #fff; }
     .leads-list .lead-item .contact { font-weight: 600; font-size: 1rem; color: #333; }
@@ -197,7 +200,9 @@
             html += '<span class="date">' + formatDate(d.updated_at) + '</span>';
             html += '<span class="msg-count">' + (d.message_count || 0) + ' сообщ.</span>';
             if (d.has_lead) html += '<span class="lead-badge">✓ Лид</span>';
-            html += '<span>' + escapeHtml(d.user_id || '') + '</span>';
+            var uid = (d.user_id || '').toString();
+            var uidShort = uid.length > 20 ? uid.slice(0, 18) + '…' : uid;
+            html += '<span class="user-id" title="' + escapeHtml(uid) + '">Посетитель: ' + escapeHtml(uidShort || '—') + '</span>';
             html += '</div>';
             html += '<div class="dialog-preview">' + escapeHtml(preview) + '</div>';
             html += '</div>';
@@ -237,13 +242,15 @@
         const d = await r.json();
         let html = '<h2>Диалог</h2><p><a href="#" data-goto="dialogs">← Мои диалоги</a></p><ul class="list">';
         for (const m of (d.messages || [])) {
-          html += '<li><strong>' + escapeHtml(m.role || '') + ':</strong> ' + escapeHtml((m.content || '').slice(0, 500)) + (m.content && m.content.length > 500 ? '…' : '') + '</li>';
+          var content = m.content || '';
+          var displayContent = (m.role === 'assistant') ? content : (content.length > 500 ? content.slice(0, 500) + '…' : content);
+          html += '<li class="chat-msg ' + escapeHtml((m.role || '')) + '"><strong>' + escapeHtml(m.role === 'assistant' ? 'Бот' : (m.role || 'user')) + ':</strong> ' + escapeHtml(displayContent) + '</li>';
         }
         html += '</ul>';
         document.getElementById('content').innerHTML = html;
       }
 
-      const CHUNK_MAX = 500;
+      const CHUNK_MAX = 2000;
 
       async function loadChunks() {
         if (!requireAuth()) return;
@@ -255,16 +262,19 @@
         }
         const chunks = await r.json();
         let html = '<h2>Промпт чат-бота (чанки)</h2>';
-        html += '<p class="hint">Промпт собирается из чанков (каждый до 500 символов). Порядок по position. Можно добавлять, редактировать и удалять чанки здесь или через <a href="#" data-goto="admin-chat">Админ-чат</a>.</p>';
+        html += '<p class="hint">Промпт собирается из чанков (каждый до 2000 символов). Порядок по position. Можно добавлять, редактировать и удалять чанки здесь или через <a href="#" data-goto="admin-chat">Админ-чат</a>.</p>';
         for (const c of chunks) {
           const contentEsc = (c.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+          const questionEsc = (c.question || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
           html += '<div class="chunk-card" data-chunk-id="' + c.id + '">';
           html += '<div class="chunk-meta">№' + c.position + ' · id: ' + c.id + ' · ' + (c.content || '').length + ' / ' + CHUNK_MAX + ' симв.</div>';
-          html += '<textarea class="chunk-content" maxlength="' + CHUNK_MAX + '" data-chunk-id="' + c.id + '">' + contentEsc + '</textarea>';
+          html += '<div class="chunk-question-label">Вопрос (который задавал админ-помощник):</div>';
+          html += '<input type="text" class="chunk-question-input" data-chunk-id="' + c.id + '" placeholder="Вопрос, на который пользователь ответил этим чанком" maxlength="1000" value="' + questionEsc + '">';
+          html += '<textarea class="chunk-content" maxlength="' + CHUNK_MAX + '" data-chunk-id="' + c.id + '" placeholder="Ответ (текст чанка)">' + contentEsc + '</textarea>';
           html += '<div class="chunk-actions"><button type="button" class="saveChunk" data-chunk-id="' + c.id + '">Сохранить</button><button type="button" class="delete deleteChunk" data-chunk-id="' + c.id + '">Удалить</button></div>';
           html += '</div>';
         }
-        html += '<div class="add-chunk-box"><p>Добавить чанк (до ' + CHUNK_MAX + ' символов):</p><textarea id="newChunkContent" placeholder="Текст чанка..." maxlength="' + CHUNK_MAX + '"></textarea><div class="counter"><span id="newChunkCounter">0</span> / ' + CHUNK_MAX + '</div><button type="button" id="addChunkBtn">Добавить чанк</button></div>';
+        html += '<div class="add-chunk-box"><p>Добавить чанк (ответ до ' + CHUNK_MAX + ' символов, вопрос до 1000):</p><input type="text" id="newChunkQuestion" placeholder="Вопрос (необязательно)" maxlength="1000"><textarea id="newChunkContent" placeholder="Текст чанка (ответ)..." maxlength="' + CHUNK_MAX + '"></textarea><div class="counter"><span id="newChunkCounter">0</span> / ' + CHUNK_MAX + '</div><button type="button" id="addChunkBtn">Добавить чанк</button></div>';
         document.getElementById('content').innerHTML = html;
 
         document.getElementById('newChunkContent').addEventListener('input', function () {
@@ -273,14 +283,16 @@
 
         document.getElementById('addChunkBtn').addEventListener('click', async () => {
           const text = document.getElementById('newChunkContent').value.trim();
-          if (!text) { alert('Введите текст чанка'); return; }
+          const question = document.getElementById('newChunkQuestion').value.trim() || undefined;
+          if (!text) { alert('Введите текст чанка (ответ)'); return; }
           const res = await fetch(base + '/' + tenantId + '/me/prompt/chunks', {
             method: 'POST',
             headers: headers(true),
-            body: JSON.stringify({ content: text })
+            body: JSON.stringify({ content: text, question: question || null })
           });
           if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
           document.getElementById('newChunkContent').value = '';
+          document.getElementById('newChunkQuestion').value = '';
           document.getElementById('newChunkCounter').textContent = '0';
           loadChunks();
         });
@@ -289,12 +301,14 @@
           btn.addEventListener('click', async () => {
             const cid = btn.getAttribute('data-chunk-id');
             const ta = document.querySelector('.chunk-content[data-chunk-id="' + cid + '"]');
+            const qi = document.querySelector('.chunk-question-input[data-chunk-id="' + cid + '"]');
             const content = ta ? ta.value.trim() : '';
-            if (!content) { alert('Текст не может быть пустым'); return; }
+            const question = qi ? qi.value.trim() : '';
+            if (!content) { alert('Текст чанка не может быть пустым'); return; }
             const res = await fetch(base + '/' + tenantId + '/me/prompt/chunks/' + cid, {
               method: 'PATCH',
               headers: headers(true),
-              body: JSON.stringify({ content: content })
+              body: JSON.stringify({ content: content, question: question })
             });
             if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
             loadChunks();
@@ -327,11 +341,11 @@
         function appendAdminMsg(role, text) {
           const div = document.createElement('div');
           div.className = 'chat-msg ' + role;
-          div.textContent = (role === 'user' ? 'Вы: ' : 'Бот: ') + text;
+          div.textContent = (role === 'user' ? 'Вы: ' : 'АДМИН ПОМОЩНИК: ') + text;
           log.appendChild(div);
           log.scrollTop = log.scrollHeight;
         }
-        appendAdminMsg('assistant', 'Здравствуйте! Чем могу помочь? Хотите добавить или изменить чанки промпта бота для клиентов?');
+        appendAdminMsg('assistant', 'Здравствуйте! Я — Админ-помощник. Помогаю заполнять промпт чат-бота чанками (до 2000 символов). Напишите, с чего начнём — добавим или изменим чанки.');
         send.addEventListener('click', async () => {
           const msg = (input.value || '').trim();
           if (!msg) return;

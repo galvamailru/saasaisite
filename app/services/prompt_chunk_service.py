@@ -1,4 +1,4 @@
-"""CRUD для чанков промпта (макс. 500 символов). Сборка итогового промпта для LLM."""
+"""CRUD для чанков промпта (макс. 2000 символов). Сборка итогового промпта для LLM."""
 from uuid import UUID
 
 from sqlalchemy import select
@@ -25,27 +25,39 @@ async def get_combined_prompt(db: AsyncSession, tenant_id: UUID) -> str:
     return "\n\n".join(c.content.strip() for c in chunks if (c.content or "").strip())
 
 
-async def create_chunk(db: AsyncSession, tenant_id: UUID, content: str, position: int | None = None) -> PromptChunk:
-    """Добавить чанк. content обрезается до 500 символов."""
-    content = (content or "").strip()[:500]
+async def create_chunk(
+    db: AsyncSession,
+    tenant_id: UUID,
+    content: str,
+    position: int | None = None,
+    question: str | None = None,
+) -> PromptChunk:
+    """Добавить чанк. content до 2000 символов, question (вопрос админа) до 1000."""
+    content = (content or "").strip()[:2000]
     if not content:
         raise ValueError("content must not be empty")
+    q = (question or "").strip()[:1000] or None
     if position is None:
         r = await db.execute(
             select(PromptChunk).where(PromptChunk.tenant_id == tenant_id).order_by(PromptChunk.position.desc())
         )
         last = r.scalar_one_or_none()
         position = (last.position + 1) if last is not None else 0
-    chunk = PromptChunk(tenant_id=tenant_id, position=position, content=content)
+    chunk = PromptChunk(tenant_id=tenant_id, position=position, question=q, content=content)
     db.add(chunk)
     await db.flush()
     return chunk
 
 
 async def update_chunk(
-    db: AsyncSession, tenant_id: UUID, chunk_id: UUID, content: str | None = None, position: int | None = None
+    db: AsyncSession,
+    tenant_id: UUID,
+    chunk_id: UUID,
+    content: str | None = None,
+    position: int | None = None,
+    question: str | None = None,
 ) -> PromptChunk | None:
-    """Обновить чанк."""
+    """Обновить чанк (content, position, question)."""
     r = await db.execute(
         select(PromptChunk).where(PromptChunk.id == chunk_id, PromptChunk.tenant_id == tenant_id)
     )
@@ -53,9 +65,11 @@ async def update_chunk(
     if not chunk:
         return None
     if content is not None:
-        chunk.content = (content.strip())[:500]
+        chunk.content = (content.strip())[:2000]
     if position is not None:
         chunk.position = position
+    if question is not None:
+        chunk.question = (question.strip())[:1000] or None
     await db.flush()
     return chunk
 

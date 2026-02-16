@@ -131,7 +131,8 @@ class UserProfile(Base):
 
 
 class PromptChunk(Base):
-    """Чанк системного промпта чат-бота (до 500 символов). Порядок задаётся position."""
+    """Чанк системного промпта чат-бота: вопрос админа (question) и ответ пользователя (content).
+    Порядок по position. В дальнейшем возможны type/metadata для MCP или триггеров галереи."""
     __tablename__ = "prompt_chunk"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -139,7 +140,8 @@ class PromptChunk(Base):
         UUID(as_uuid=True), ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    content: Mapped[str] = mapped_column(String(500), nullable=False)
+    question: Mapped[str | None] = mapped_column(String(1000), nullable=True)  # вопрос, на который пользователь ответил этим чанком
+    content: Mapped[str] = mapped_column(String(2000), nullable=False)
 
     tenant = relationship("Tenant", back_populates="prompt_chunks")
 

@@ -100,10 +100,11 @@ class ProfileUpdate(BaseModel):
     contact: str | None = Field(None, max_length=256)
 
 
-# Cabinet: prompt chunks (max 500 chars per chunk)
+# Cabinet: prompt chunks (max 2000 chars content; optional question from admin bot)
 class PromptChunkResponse(BaseModel):
     id: UUID
     position: int
+    question: str | None = None
     content: str
 
     class Config:
@@ -111,12 +112,14 @@ class PromptChunkResponse(BaseModel):
 
 
 class PromptChunkCreate(BaseModel):
-    content: str = Field(..., min_length=1, max_length=500)
+    content: str = Field(..., min_length=1, max_length=2000)
+    question: str | None = Field(None, max_length=1000)
     position: int | None = None
 
 
 class PromptChunkUpdate(BaseModel):
-    content: str | None = Field(None, min_length=1, max_length=500)
+    content: str | None = Field(None, min_length=1, max_length=2000)
+    question: str | None = Field(None, max_length=1000)
     position: int | None = None
 
 
