@@ -1,6 +1,6 @@
 # CIP Backend (saasaisite)
 
-Backend многопользовательской SaaS-платформы диалогового веб-сайта с AI-агентом (CIP): чат (REST + SSE), кабинет пользователя (диалоги, сохранённое, профиль). Реализация по [04-execution-spec.md](prompts/04-execution-spec.md).
+Backend многопользовательской SaaS-платформы диалогового веб-сайта с AI-агентом (CIP): чат (REST + SSE), кабинет (диалоги, промпт чанками, вставка чата на сайт, админ-чат, профиль). Регистрация с подтверждением по e-mail. Архитектура допускает расширение (галерея, RAG, MCP) без переделки ядра — см. [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Стек
 
@@ -11,11 +11,11 @@ Backend многопользовательской SaaS-платформы ди�
 
 ## Быстрый старт
 
-1. Скопировать `.env.example` в `.env` и задать переменные: пароли и пользователи БД (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`), MinIO (`MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`), SMTP (в Docker используется контейнер Mailpit), `DEEPSEEK_API_KEY`.
+1. Скопировать `.env.example` в `.env` и задать переменные: пароли БД (`POSTGRES_*`), SMTP (в Docker — Mailpit), `DEEPSEEK_API_KEY`.
 2. Запуск через Docker Compose:
 
 ```bash
-docker-compose up -d db minio mailpit
+docker-compose up -d db mailpit
 # Дождаться готовности БД, затем:
 docker-compose run --rm app alembic upgrade head
 docker-compose up app
@@ -99,19 +99,20 @@ docker run -d -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minioadmin -e MINIO_R
 ## Маршруты
 
 - **Чат:** `POST /api/v1/tenants/{tenant_id}/chat` — тело: `{ "user_id", "message", "dialog_id?" }` → SSE.
-- **Кабинет:**  
+- **Кабинет (JWT):**  
   - `GET /api/v1/tenants/by-slug/{slug}` — тенант по slug.  
-  - `GET /api/v1/tenants/{tenant_id}/me/dialogs` — список диалогов (заголовок `X-User-Id` или `Authorization: Bearer <JWT>`).  
-  - `GET /api/v1/tenants/{tenant_id}/me/dialogs/{dialog_id}` — сообщения диалога.  
-  - `GET/POST/DELETE /api/v1/tenants/{tenant_id}/me/saved` — сохранённое.  
-  - `GET/PATCH /api/v1/tenants/{tenant_id}/me/profile` — профиль.
+  - `GET /api/v1/tenants/{tenant_id}/me/dialogs`, `GET .../me/dialogs/{dialog_id}` — диалоги.  
+  - `GET/POST/PATCH/DELETE /api/v1/tenants/{tenant_id}/me/prompt/chunks` — чанки промпта (до 500 символов).  
+  - `GET /api/v1/tenants/{tenant_id}/me/embed` — URL и код iframe для вставки чата на сайт.  
+  - `GET/POST/DELETE .../me/saved`, `GET/PATCH .../me/profile` — сохранённое, профиль.  
+  - `POST .../admin/chat` — админ-чат.
 - **Регистрация и вход:**  
   - `POST /api/v1/tenants/{tenant_id}/register` — регистрация (email, пароль); отправляется письмо с ссылкой подтверждения.  
   - `GET /api/v1/tenants/by-slug/{slug}/confirm?token=...` — подтверждение email по ссылке из письма.  
   - `POST /api/v1/tenants/{tenant_id}/login` — вход (email, пароль) → JWT.
 - **Статика:**  
-  - `/{slug}/chat` — чат.  
-  - `/{slug}/my`, `/{slug}/my/dialogs`, `/{slug}/my/saved`, `/{slug}/my/profile` — кабинет.  
+  - `/{slug}/chat`, `/{slug}/chat/embed` — чат и чат для iframe.  
+  - `/{slug}/my`, `/{slug}/my/...` — кабинет.  
   - `/{slug}/register`, `/{slug}/login`, `/{slug}/confirm?token=...` — регистрация, вход, подтверждение email.
 
 ## Тесты
@@ -126,8 +127,7 @@ pytest tests/ -v
 
 Пароли и пользователи БД и MinIO задаются в `.env` (см. `.env.example`).
 
-- **БД:** `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` — пользователь, пароль и база PostgreSQL. `DATABASE_URL` — полная строка подключения (локально: `localhost`, в Docker: хост `db`).
-- **MinIO:** `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` — учётные данные MinIO; `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` — те же значения для приложения; `MINIO_ENDPOINT`, `MINIO_BUCKET`, `MINIO_SECURE`.
+- **БД:** `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL`.
 - **LLM:** `DEEPSEEK_API_URL`, `DEEPSEEK_API_KEY`
 - **Приложение:** `PROMPT_FILE`, `APP_HOST`, `APP_PORT`
 - **Регистрация и email:**  
@@ -148,7 +148,7 @@ pytest tests/ -v
 ```bash
 docker-compose down
 docker volume rm saasaisite_pgdata
-docker-compose up -d db minio mailpit
+docker-compose up -d db mailpit
 # Дождаться готовности БД (healthcheck), затем:
 docker-compose run --rm app alembic upgrade head
 docker-compose up app

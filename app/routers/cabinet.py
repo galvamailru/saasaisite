@@ -1,7 +1,7 @@
-"""Cabinet: только для зарегистрированных (JWT). Файлы, галереи, промпт, админ-чат."""
+"""Cabinet: только для зарегистрированных (JWT). Диалоги, чанки промпта, вставка на сайт, админ-чат, профиль."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile, File
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -16,6 +16,12 @@ from app.schemas import (
     ProfileUpdate,
     SavedItemCreate,
     SavedItemResponse,
+    PromptChunkResponse,
+    PromptChunkCreate,
+    PromptChunkUpdate,
+    EmbedCodeResponse,
+    AdminChatRequest,
+    AdminChatResponse,
 )
 from app.services.cabinet_service import (
     get_dialog_messages,
@@ -27,35 +33,12 @@ from app.services.cabinet_service import (
     upsert_profile,
 )
 from app.models import SavedItem
-from app.services.prompt_loader import load_prompt
-from app.services.file_service import (
-    list_user_files,
-    get_user_file_by_id,
-    create_user_file,
-    set_file_trigger,
-    delete_user_file,
-    get_presigned_url,
+from app.services.prompt_chunk_service import (
+    list_chunks,
+    create_chunk,
+    update_chunk,
+    delete_chunk,
 )
-from app.services.gallery_service import (
-    list_galleries,
-    get_gallery_by_id,
-    create_gallery,
-    delete_gallery,
-    add_file_to_gallery,
-    remove_from_gallery,
-)
-from app.schemas import (
-    UserFileResponse,
-    FileTriggerUpdate,
-    GalleryResponse,
-    GalleryItemResponse,
-    GalleryCreate,
-    GalleryAddItem,
-    AdminChatRequest,
-    AdminChatResponse,
-    PromptUpdate,
-)
-from app.config import PROJECT_ROOT
 from app.services.admin_chat_service import handle_admin_message
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["cabinet"])
@@ -110,7 +93,7 @@ async def get_cabinet_user(
     return user_id
 
 
-# Dialogs (только для зарегистрированных)
+# Dialogs
 @router.get("/{tenant_id:uuid}/me/dialogs", response_model=DialogListResponse)
 async def list_user_dialogs(
     tenant_id: UUID,
@@ -252,9 +235,9 @@ async def update_user_profile(
     )
 
 
-# Промпт чат-бота тенанта (просмотр и сохранение в БД — каждый админ настраивает своего бота)
-@router.get("/{tenant_id:uuid}/me/prompt")
-async def get_agent_prompt(
+# Prompt chunks (max 500 chars each)
+@router.get("/{tenant_id:uuid}/me/prompt/chunks", response_model=list[PromptChunkResponse])
+async def list_prompt_chunks(
     tenant_id: UUID,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_cabinet_user),
@@ -262,236 +245,77 @@ async def get_agent_prompt(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    if getattr(tenant, "system_prompt", None) and (tenant.system_prompt or "").strip():
-        return {"prompt": tenant.system_prompt}
+    chunks = await list_chunks(db, tenant_id)
+    return [PromptChunkResponse(id=c.id, position=c.position, content=c.content) for c in chunks]
+
+
+@router.post("/{tenant_id:uuid}/me/prompt/chunks", response_model=PromptChunkResponse, status_code=201)
+async def create_prompt_chunk(
+    tenant_id: UUID,
+    body: PromptChunkCreate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
     try:
-        text = load_prompt(PROJECT_ROOT)
-        return {"prompt": text}
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+        chunk = await create_chunk(db, tenant_id, body.content, body.position)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return PromptChunkResponse(id=chunk.id, position=chunk.position, content=chunk.content)
 
 
-@router.patch("/{tenant_id:uuid}/me/prompt")
-async def update_agent_prompt(
+@router.patch("/{tenant_id:uuid}/me/prompt/chunks/{chunk_id:uuid}", response_model=PromptChunkResponse)
+async def patch_prompt_chunk(
     tenant_id: UUID,
-    body: PromptUpdate,
+    chunk_id: UUID,
+    body: PromptChunkUpdate,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_cabinet_user),
 ):
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    tenant.system_prompt = body.prompt.strip() or None
-    await db.flush()
-    return {"prompt": tenant.system_prompt or ""}
+    chunk = await update_chunk(db, tenant_id, chunk_id, content=body.content, position=body.position)
+    if not chunk:
+        raise HTTPException(status_code=404, detail="chunk not found")
+    return PromptChunkResponse(id=chunk.id, position=chunk.position, content=chunk.content)
 
 
-# Файлы пользователя (MinIO)
-@router.get("/{tenant_id:uuid}/me/files", response_model=list[UserFileResponse])
-async def list_files(
+@router.delete("/{tenant_id:uuid}/me/prompt/chunks/{chunk_id:uuid}", status_code=204)
+async def delete_prompt_chunk(
     tenant_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    _, items = await list_user_files(db, tenant_id, user_id, limit=limit, offset=offset)
-    return [
-        UserFileResponse(
-            id=uf.id,
-            filename=uf.filename,
-            content_type=uf.content_type,
-            trigger=uf.trigger,
-            created_at=uf.created_at,
-            url=get_presigned_url(uf.minio_key),
-        )
-        for uf in items
-    ]
-
-
-@router.post("/{tenant_id:uuid}/me/files", response_model=UserFileResponse, status_code=201)
-async def upload_file(
-    tenant_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-    file: UploadFile = File(...),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="empty file")
-    uf = await create_user_file(
-        db, tenant_id, user_id,
-        file.filename or "file",
-        file.content_type or "application/octet-stream",
-        data,
-    )
-    return UserFileResponse(
-        id=uf.id,
-        filename=uf.filename,
-        content_type=uf.content_type,
-        trigger=uf.trigger,
-        created_at=uf.created_at,
-        url=get_presigned_url(uf.minio_key),
-    )
-
-
-@router.patch("/{tenant_id:uuid}/me/files/{file_id:uuid}", response_model=UserFileResponse)
-async def update_file_trigger(
-    tenant_id: UUID,
-    file_id: UUID,
-    body: FileTriggerUpdate,
+    chunk_id: UUID,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_cabinet_user),
 ):
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    uf = await set_file_trigger(db, tenant_id, user_id, file_id, body.trigger)
-    if not uf:
-        raise HTTPException(status_code=404, detail="file not found")
-    return UserFileResponse(
-        id=uf.id,
-        filename=uf.filename,
-        content_type=uf.content_type,
-        trigger=uf.trigger,
-        created_at=uf.created_at,
-        url=get_presigned_url(uf.minio_key),
-    )
-
-
-@router.get("/{tenant_id:uuid}/me/files/{file_id:uuid}/url")
-async def get_file_url_endpoint(
-    tenant_id: UUID,
-    file_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-    expires: int = Query(3600, ge=60, le=86400),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    uf = await get_user_file_by_id(db, tenant_id, user_id, file_id)
-    if not uf:
-        raise HTTPException(status_code=404, detail="file not found")
-    return {"url": get_presigned_url(uf.minio_key, expires)}
-
-
-@router.delete("/{tenant_id:uuid}/me/files/{file_id:uuid}", status_code=204)
-async def delete_file(
-    tenant_id: UUID,
-    file_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    ok = await delete_user_file(db, tenant_id, user_id, file_id)
+    ok = await delete_chunk(db, tenant_id, chunk_id)
     if not ok:
-        raise HTTPException(status_code=404, detail="file not found")
+        raise HTTPException(status_code=404, detail="chunk not found")
 
 
-# Галереи
-@router.get("/{tenant_id:uuid}/me/galleries", response_model=list[GalleryResponse])
-async def list_galleries_route(
+# Embed: код iframe для вставки чата на сайт
+@router.get("/{tenant_id:uuid}/me/embed", response_model=EmbedCodeResponse)
+async def get_embed_code(
     tenant_id: UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_cabinet_user),
 ):
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    galleries = await list_galleries(db, tenant_id, user_id)
-    from sqlalchemy import select, func
-    from app.models import GalleryItem
-    result = []
-    for g in galleries:
-        count = await db.execute(select(func.count()).select_from(GalleryItem).where(GalleryItem.gallery_id == g.id))
-        result.append(GalleryResponse(
-            id=g.id,
-            name=g.name,
-            created_at=g.created_at,
-            item_count=count.scalar() or 0,
-        ))
-    return result
+    base_url = str(request.base_url).rstrip("/")
+    chat_url = f"{base_url}/{tenant.slug}/chat/embed"
+    iframe_code = f'<iframe src="{chat_url}" width="400" height="600" frameborder="0" title="Чат"></iframe>'
+    return EmbedCodeResponse(chat_url=chat_url, iframe_code=iframe_code)
 
 
-@router.post("/{tenant_id:uuid}/me/galleries", response_model=GalleryResponse, status_code=201)
-async def create_gallery_route(
-    tenant_id: UUID,
-    body: GalleryCreate,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    g = await create_gallery(db, tenant_id, user_id, body.name)
-    return GalleryResponse(id=g.id, name=g.name, created_at=g.created_at, item_count=0)
-
-
-@router.delete("/{tenant_id:uuid}/me/galleries/{gallery_id:uuid}", status_code=204)
-async def delete_gallery_route(
-    tenant_id: UUID,
-    gallery_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    ok = await delete_gallery(db, tenant_id, user_id, gallery_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="gallery not found")
-
-
-@router.post("/{tenant_id:uuid}/me/galleries/{gallery_id:uuid}/items", response_model=GalleryItemResponse, status_code=201)
-async def add_to_gallery_route(
-    tenant_id: UUID,
-    gallery_id: UUID,
-    body: GalleryAddItem,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    item = await add_file_to_gallery(db, tenant_id, user_id, gallery_id, body.user_file_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="gallery or file not found")
-    uf = await get_user_file_by_id(db, tenant_id, user_id, body.user_file_id)
-    return GalleryItemResponse(
-        id=item.id,
-        user_file_id=item.user_file_id,
-        position=item.position,
-        filename=uf.filename if uf else None,
-        url=get_presigned_url(uf.minio_key) if uf else None,
-    )
-
-
-@router.delete("/{tenant_id:uuid}/me/galleries/{gallery_id:uuid}/items/{item_id:uuid}", status_code=204)
-async def remove_item_from_gallery(
-    tenant_id: UUID,
-    gallery_id: UUID,
-    item_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    ok = await remove_from_gallery(db, tenant_id, user_id, gallery_id, item_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="item or gallery not found")
-
-
-# Админ-чат: диалог без команд; бот сам понимает намерения и выполняет действия
+# Admin chat
 @router.post("/{tenant_id:uuid}/admin/chat", response_model=AdminChatResponse)
 async def admin_chat(
     tenant_id: UUID,

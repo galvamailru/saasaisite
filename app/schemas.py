@@ -96,59 +96,34 @@ class ProfileUpdate(BaseModel):
     contact: str | None = Field(None, max_length=256)
 
 
-# Cabinet: files (MinIO)
-class UserFileResponse(BaseModel):
+# Cabinet: prompt chunks (max 500 chars per chunk)
+class PromptChunkResponse(BaseModel):
     id: UUID
-    filename: str
-    content_type: str
-    trigger: str | None = None
-    created_at: datetime
-    url: str | None = None
-
-    class Config:
-        from_attributes = True
-
-
-class FileTriggerUpdate(BaseModel):
-    trigger: str | None = Field(None, max_length=128)
-
-
-# Cabinet: galleries
-class GalleryResponse(BaseModel):
-    id: UUID
-    name: str
-    created_at: datetime
-    item_count: int = 0
-
-    class Config:
-        from_attributes = True
-
-
-class GalleryItemResponse(BaseModel):
-    id: UUID
-    user_file_id: UUID
     position: int
-    filename: str | None = None
-    url: str | None = None
+    content: str
 
     class Config:
         from_attributes = True
 
 
-class GalleryCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=256)
+class PromptChunkCreate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=500)
+    position: int | None = None
 
 
-class GalleryAddItem(BaseModel):
-    user_file_id: UUID
+class PromptChunkUpdate(BaseModel):
+    content: str | None = Field(None, min_length=1, max_length=500)
+    position: int | None = None
 
 
-# Cabinet: system prompt (per-tenant chatbot)
-class PromptUpdate(BaseModel):
-    prompt: str = Field(..., max_length=65535)
+# Cabinet: embed code for iframe
+class EmbedCodeResponse(BaseModel):
+    """URL чата для iframe и готовый HTML-код для вставки."""
+    chat_url: str
+    iframe_code: str
 
 
-# Admin chat (диалог без команд; бот сам выполняет действия через [EXECUTE])
+# Admin chat
 class ChatMessage(BaseModel):
     role: str = Field(..., pattern="^(user|assistant)$")
     content: str = Field(..., max_length=8192)

@@ -47,6 +47,18 @@ async def serve_chat(slug: str, db: AsyncSession = Depends(get_db)) -> FileRespo
     return FileResponse(chat_path)
 
 
+@app.get("/{slug}/chat/embed")
+async def serve_chat_embed(slug: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+    """Чат для вставки в iframe на сторонних сайтах."""
+    tenant = await get_tenant_by_slug(db, slug)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    chat_path = STATIC_DIR / "chat.html"
+    if not chat_path.exists():
+        raise HTTPException(status_code=404, detail="chat page not found")
+    return FileResponse(chat_path)
+
+
 @app.get("/{slug}/my")
 @app.get("/{slug}/my/{path:path}")
 async def serve_cabinet(slug: str, path: str = "", db: AsyncSession = Depends(get_db)) -> FileResponse:

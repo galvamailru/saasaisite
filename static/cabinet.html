@@ -13,17 +13,23 @@
     .list li { padding: 0.5rem; border-bottom: 1px solid #eee; }
     .list li a { text-decoration: none; color: inherit; }
     .error { color: #c00; }
-    .prompt-box { white-space: pre-wrap; font-family: monospace; background: #f5f5f5; padding: 1rem; border-radius: 6px; max-height: 50vh; overflow: auto; }
-    .prompt-edit { width: 100%; min-height: 300px; font-family: monospace; font-size: 0.9rem; padding: 1rem; border: 1px solid #ddd; border-radius: 6px; resize: vertical; }
-    .prompt-actions { margin-top: 0.75rem; }
-    .prompt-actions button { padding: 0.5rem 1rem; border-radius: 6px; border: none; background: #00acc1; color: #fff; cursor: pointer; }
-    .prompt-actions button:hover { background: #0097a7; }
-    .prompt-saved { color: #2e7d32; font-size: 0.9rem; margin-left: 0.5rem; }
     .hint { font-size: 0.9rem; color: #555; margin-bottom: 0.75rem; }
     .hint a { color: #00acc1; }
-    .file-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
-    .file-row input[type="text"] { flex: 1; max-width: 200px; }
-    .gallery-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    .chunk-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; background: #fafafa; }
+    .chunk-card textarea { width: 100%; min-height: 80px; font-size: 0.9rem; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
+    .chunk-meta { font-size: 0.85rem; color: #666; margin-bottom: 0.5rem; }
+    .chunk-actions { margin-top: 0.5rem; }
+    .chunk-actions button { margin-right: 0.5rem; padding: 0.4rem 0.8rem; border-radius: 6px; border: none; background: #00acc1; color: #fff; cursor: pointer; font-size: 0.9rem; }
+    .chunk-actions button:hover { background: #0097a7; }
+    .chunk-actions button.delete { background: #c62828; }
+    .chunk-actions button.delete:hover { background: #b71c1c; }
+    .add-chunk-box { margin-top: 1rem; padding: 1rem; border: 1px dashed #00acc1; border-radius: 8px; background: #f0f9fa; }
+    .add-chunk-box textarea { width: 100%; min-height: 100px; max-height: 200px; font-size: 0.9rem; padding: 0.5rem; border: 1px solid #00acc1; border-radius: 4px; resize: vertical; }
+    .add-chunk-box .counter { font-size: 0.85rem; color: #666; }
+    .embed-code { font-family: monospace; font-size: 0.85rem; background: #263238; color: #aed581; padding: 1rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+    .embed-actions { margin-top: 0.75rem; }
+    .embed-actions button { padding: 0.5rem 1rem; border-radius: 6px; border: none; background: #2e7d32; color: #fff; cursor: pointer; }
+    .embed-actions button:hover { background: #1b5e20; }
     .chat-log { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 0.5rem; margin-bottom: 0.5rem; background: #fafafa; }
     .chat-msg { margin: 0.5rem 0; }
     .chat-msg.user { color: #06c; }
@@ -37,8 +43,7 @@
     <a href="#" data-page="my">Главная</a>
     <a href="#" data-page="dialogs">Мои диалоги</a>
     <a href="#" data-page="prompt">Промпт</a>
-    <a href="#" data-page="files">Файлы</a>
-    <a href="#" data-page="galleries">Галереи</a>
+    <a href="#" data-page="embed">Вставка на сайт</a>
     <a href="#" data-page="admin-chat">Админ-чат</a>
     <a href="#" data-page="saved">Сохранённое</a>
     <a href="#" data-page="profile">Профиль</a>
@@ -128,162 +133,97 @@
         document.getElementById('content').innerHTML = html;
       }
 
-      async function loadPrompt() {
+      const CHUNK_MAX = 500;
+
+      async function loadChunks() {
         if (!requireAuth()) return;
         await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/prompt', { headers: headers() });
+        const r = await fetch(base + '/' + tenantId + '/me/prompt/chunks', { headers: headers() });
         if (!r.ok) {
-          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки промпта.</p>';
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки чанков.</p>';
+          return;
+        }
+        const chunks = await r.json();
+        let html = '<h2>Промпт чат-бота (чанки)</h2>';
+        html += '<p class="hint">Промпт собирается из чанков (каждый до 500 символов). Порядок по position. Можно добавлять, редактировать и удалять чанки здесь или через <a href="#" data-goto="admin-chat">Админ-чат</a>.</p>';
+        for (const c of chunks) {
+          const contentEsc = (c.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+          html += '<div class="chunk-card" data-chunk-id="' + c.id + '">';
+          html += '<div class="chunk-meta">№' + c.position + ' · id: ' + c.id + ' · ' + (c.content || '').length + ' / ' + CHUNK_MAX + ' симв.</div>';
+          html += '<textarea class="chunk-content" maxlength="' + CHUNK_MAX + '" data-chunk-id="' + c.id + '">' + contentEsc + '</textarea>';
+          html += '<div class="chunk-actions"><button type="button" class="saveChunk" data-chunk-id="' + c.id + '">Сохранить</button><button type="button" class="delete deleteChunk" data-chunk-id="' + c.id + '">Удалить</button></div>';
+          html += '</div>';
+        }
+        html += '<div class="add-chunk-box"><p>Добавить чанк (до ' + CHUNK_MAX + ' символов):</p><textarea id="newChunkContent" placeholder="Текст чанка..." maxlength="' + CHUNK_MAX + '"></textarea><div class="counter"><span id="newChunkCounter">0</span> / ' + CHUNK_MAX + '</div><button type="button" id="addChunkBtn">Добавить чанк</button></div>';
+        document.getElementById('content').innerHTML = html;
+
+        document.getElementById('newChunkContent').addEventListener('input', function () {
+          document.getElementById('newChunkCounter').textContent = this.value.length;
+        });
+
+        document.getElementById('addChunkBtn').addEventListener('click', async () => {
+          const text = document.getElementById('newChunkContent').value.trim();
+          if (!text) { alert('Введите текст чанка'); return; }
+          const res = await fetch(base + '/' + tenantId + '/me/prompt/chunks', {
+            method: 'POST',
+            headers: headers(true),
+            body: JSON.stringify({ content: text })
+          });
+          if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
+          document.getElementById('newChunkContent').value = '';
+          document.getElementById('newChunkCounter').textContent = '0';
+          loadChunks();
+        });
+
+        document.getElementById('content').querySelectorAll('.saveChunk').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const cid = btn.getAttribute('data-chunk-id');
+            const ta = document.querySelector('.chunk-content[data-chunk-id="' + cid + '"]');
+            const content = ta ? ta.value.trim() : '';
+            if (!content) { alert('Текст не может быть пустым'); return; }
+            const res = await fetch(base + '/' + tenantId + '/me/prompt/chunks/' + cid, {
+              method: 'PATCH',
+              headers: headers(true),
+              body: JSON.stringify({ content: content })
+            });
+            if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
+            loadChunks();
+          });
+        });
+
+        document.getElementById('content').querySelectorAll('.deleteChunk').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm('Удалить этот чанк?')) return;
+            const cid = btn.getAttribute('data-chunk-id');
+            const res = await fetch(base + '/' + tenantId + '/me/prompt/chunks/' + cid, {
+              method: 'DELETE',
+              headers: headers()
+            });
+            if (!res.ok) { alert('Ошибка'); return; }
+            loadChunks();
+          });
+        });
+      }
+
+      async function loadEmbed() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/embed', { headers: headers() });
+        if (!r.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки.</p>';
           return;
         }
         const data = await r.json();
+        const code = (data.iframe_code || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         document.getElementById('content').innerHTML =
-          '<h2>Промпт чат-бота</h2><p>Этот текст задаёт поведение бота в чате с клиентами. Измените при необходимости и нажмите «Сохранить промпт». Продвинутые пользователи могут редактировать промпт здесь напрямую; остальные — через <a href="#" data-goto="admin-chat">Админ-чат</a>.</p>' +
-          '<textarea class="prompt-edit" id="promptEdit" placeholder="Опишите роль бота, тон, правила ответов..."></textarea>' +
-          '<div class="prompt-actions"><button type="button" id="promptSave">Сохранить промпт</button><span class="prompt-saved" id="promptSaved"></span></div>';
-        document.getElementById('promptEdit').value = data.prompt || '';
-        document.getElementById('promptSave').addEventListener('click', async () => {
-          const text = document.getElementById('promptEdit').value;
-          const patch = await fetch(base + '/' + tenantId + '/me/prompt', {
-            method: 'PATCH',
-            headers: headers(true),
-            body: JSON.stringify({ prompt: text })
-          });
-          if (!patch.ok) { alert('Ошибка сохранения'); return; }
-          document.getElementById('promptSaved').textContent = 'Сохранено.';
-          setTimeout(() => { document.getElementById('promptSaved').textContent = ''; }, 3000);
-        });
-      }
-
-      async function loadFiles() {
-        if (!requireAuth()) return;
-        await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/files?limit=100&offset=0', { headers: headers() });
-        if (!r.ok) {
-          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки файлов.</p>';
-          return;
-        }
-        const files = await r.json();
-        let html = '<h2>Файлы</h2>';
-        html += '<p class="hint">Загружайте файлы, задавайте триггеры и удаляйте — изменения сохраняются по кнопкам. Можно также управлять через <a href="#" data-goto="admin-chat">Админ-чат</a>.</p>';
-        html += '<form id="uploadForm"><input type="file" name="file" id="fileInput" /><button type="submit">Загрузить</button></form>';
-        html += '<ul class="list" style="margin-top:1rem">';
-        for (const f of files) {
-          const triggerVal = (f.trigger || '').replace(/"/g, '&quot;');
-          html += '<li class="file-row">';
-          html += '<span>' + (f.filename || f.id) + '</span> ';
-          html += '<input type="text" data-file-id="' + f.id + '" placeholder="Триггер (фраза)" value="' + triggerVal + '" /> ';
-          html += '<button type="button" class="setTrigger" data-file-id="' + f.id + '">Сохранить триггер</button> ';
-          if (f.url) html += '<a href="' + f.url + '" target="_blank">Открыть</a> ';
-          html += '<button type="button" class="deleteFile" data-file-id="' + f.id + '">Удалить</button>';
-          html += '</li>';
-        }
-        html += '</ul>';
-        document.getElementById('content').innerHTML = html;
-
-        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const input = document.getElementById('fileInput');
-          if (!input.files || !input.files[0]) return;
-          const fd = new FormData();
-          fd.append('file', input.files[0]);
-          const up = await fetch(base + '/' + tenantId + '/me/files', {
-            method: 'POST',
-            headers: { Authorization: 'Bearer ' + localStorage.getItem('cip_access_token') },
-            body: fd
-          });
-          if (!up.ok) { alert('Ошибка загрузки'); return; }
-          input.value = '';
-          loadFiles();
-        });
-        document.getElementById('content').querySelectorAll('.setTrigger').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const fileId = btn.getAttribute('data-file-id');
-            const input = document.querySelector('input[data-file-id="' + fileId + '"]');
-            const trigger = input ? input.value.trim() || null : null;
-            const patch = await fetch(base + '/' + tenantId + '/me/files/' + fileId, {
-              method: 'PATCH',
-              headers: headers(true),
-              body: JSON.stringify({ trigger: trigger })
-            });
-            if (!patch.ok) { alert('Ошибка'); return; }
-            loadFiles();
-          });
-        });
-        document.getElementById('content').querySelectorAll('.deleteFile').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            if (!confirm('Удалить файл?')) return;
-            const fileId = btn.getAttribute('data-file-id');
-            const del = await fetch(base + '/' + tenantId + '/me/files/' + fileId, {
-              method: 'DELETE',
-              headers: headers()
-            });
-            if (!del.ok) { alert('Ошибка'); return; }
-            loadFiles();
-          });
-        });
-      }
-
-      async function loadGalleries() {
-        if (!requireAuth()) return;
-        await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/galleries', { headers: headers() });
-        if (!r.ok) {
-          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки галерей.</p>';
-          return;
-        }
-        const galleries = await r.json();
-        let html = '<h2>Галереи</h2>';
-        html += '<p class="hint">Создавайте галереи и добавляйте в них файлы по кнопкам — или настройте через <a href="#" data-goto="admin-chat">Админ-чат</a>.</p>';
-        html += '<form id="createGalleryForm"><input type="text" name="name" placeholder="Название галереи" /> <button type="submit">Создать</button></form>';
-        html += '<div style="margin-top:1rem">';
-        for (const g of galleries) {
-          html += '<div class="gallery-card"><strong>' + (g.name || g.id) + '</strong> (id: ' + g.id + ', фото: ' + (g.item_count || 0) + ')';
-          html += ' <button type="button" class="deleteGallery" data-gallery-id="' + g.id + '">Удалить галерею</button>';
-          html += '<p>Добавить файл: <input type="text" class="addFileId" placeholder="file_id" data-gallery-id="' + g.id + '" /><button type="button" class="addToGallery" data-gallery-id="' + g.id + '">Добавить</button></p>';
-          html += '</div>';
-        }
-        html += '</div>';
-        document.getElementById('content').innerHTML = html;
-
-        document.getElementById('createGalleryForm').addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const name = document.querySelector('#createGalleryForm input[name="name"]').value.trim() || 'Галерея';
-          const cr = await fetch(base + '/' + tenantId + '/me/galleries', {
-            method: 'POST',
-            headers: headers(true),
-            body: JSON.stringify({ name: name })
-          });
-          if (!cr.ok) { alert('Ошибка создания'); return; }
-          loadGalleries();
-        });
-        document.getElementById('content').querySelectorAll('.deleteGallery').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            if (!confirm('Удалить галерею?')) return;
-            const galleryId = btn.getAttribute('data-gallery-id');
-            const del = await fetch(base + '/' + tenantId + '/me/galleries/' + galleryId, {
-              method: 'DELETE',
-              headers: headers()
-            });
-            if (!del.ok) { alert('Ошибка'); return; }
-            loadGalleries();
-          });
-        });
-        document.getElementById('content').querySelectorAll('.addToGallery').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const galleryId = btn.getAttribute('data-gallery-id');
-            const input = document.querySelector('.addFileId[data-gallery-id="' + galleryId + '"]');
-            const fileId = input ? input.value.trim() : '';
-            if (!fileId) { alert('Введите file_id'); return; }
-            const add = await fetch(base + '/' + tenantId + '/me/galleries/' + galleryId + '/items', {
-              method: 'POST',
-              headers: headers(true),
-              body: JSON.stringify({ user_file_id: fileId })
-            });
-            if (!add.ok) { const j = await add.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
-            input.value = '';
-            loadGalleries();
-          });
+          '<h2>Вставка чата на сайт</h2>' +
+          '<p class="hint">Скопируйте код ниже и вставьте в HTML-страницу вашего сайта. Чат откроется в iframe по ссылке: <strong>' + (data.chat_url || '') + '</strong></p>' +
+          '<pre class="embed-code" id="embedCodePre">' + code + '</pre>' +
+          '<div class="embed-actions"><button type="button" id="copyEmbedBtn">Копировать код</button></div>';
+        document.getElementById('copyEmbedBtn').addEventListener('click', () => {
+          const pre = document.getElementById('embedCodePre');
+          const text = pre.textContent;
+          navigator.clipboard.writeText(text).then(() => alert('Код скопирован в буфер обмена.')).catch(() => alert('Не удалось скопировать.'));
         });
       }
 
@@ -291,7 +231,7 @@
         if (!requireAuth()) return;
         await ensureTenant();
         let html = '<h2>Админ-чат</h2>';
-        html += '<p>Общайтесь с ботом: он сам предложит изменить промпт, добавить картинки в галерею или привязать триггеры. Продвинутые пользователи могут вносить изменения напрямую в разделах <a href="#" data-goto="prompt">Промпт</a>, <a href="#" data-goto="files">Файлы</a> и <a href="#" data-goto="galleries">Галереи</a> и нажимать «Сохранить».</p>';
+        html += '<p class="hint">Общайтесь с ботом: он предложит добавить или изменить чанки промпта. Прямое редактирование — в разделе <a href="#" data-goto="prompt">Промпт</a>.</p>';
         html += '<div class="chat-log" id="adminChatLog"></div>';
         html += '<div class="chat-input"><textarea id="adminChatInput" placeholder="Напишите, чем помочь..."></textarea><button id="adminChatSend">Отправить</button></div>';
         document.getElementById('content').innerHTML = html;
@@ -300,7 +240,7 @@
         const input = document.getElementById('adminChatInput');
         const send = document.getElementById('adminChatSend');
         const adminChatHistory = [];
-        appendMsg('assistant', 'Здравствуйте! Чем могу помочь? Хотите изменить промпт бота для клиентов, добавить картинки в галерею или привязать фразы к файлам? Напишите, что вам нужно.');
+        appendMsg('assistant', 'Здравствуйте! Чем могу помочь? Хотите добавить или изменить чанки промпта бота для клиентов?');
 
         function appendMsg(role, text) {
           const div = document.createElement('div');
@@ -373,9 +313,8 @@
         setLinks();
         renderAuthLinks();
         if (page === 'dialogs') loadDialogs();
-        else if (page === 'prompt') loadPrompt();
-        else if (page === 'files') loadFiles();
-        else if (page === 'galleries') loadGalleries();
+        else if (page === 'prompt') loadChunks();
+        else if (page === 'embed') loadEmbed();
         else if (page === 'admin-chat') loadAdminChat();
         else if (page === 'saved') loadSaved();
         else if (page === 'profile') loadProfile();
