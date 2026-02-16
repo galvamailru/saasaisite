@@ -26,12 +26,14 @@ from app.schemas import (
 )
 from app.services.cabinet_service import (
     get_dialog_messages,
+    get_dialog_messages_for_tenant,
     get_profile,
     get_saved_by_id,
     get_tenant_by_id,
     list_dialogs,
     list_leads,
     list_saved,
+    list_tenant_dialogs,
     upsert_profile,
 )
 from app.models import SavedItem
@@ -95,7 +97,54 @@ async def get_cabinet_user(
     return user_id
 
 
-# Dialogs
+# Dialogs (все диалоги тенанта — посетители iframe; админ видит все)
+@router.get("/{tenant_id:uuid}/me/tenant/dialogs", response_model=DialogListResponse)
+async def list_tenant_dialogs_endpoint(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    total, items = await list_tenant_dialogs(db, tenant_id, limit=limit, offset=offset)
+    return DialogListResponse(
+        total=total,
+        items=[
+            DialogListItem(
+                id=d["dialog"].id,
+                created_at=d["dialog"].created_at,
+                updated_at=d["dialog"].updated_at,
+                preview=d["preview"],
+                user_id=d["dialog"].user_id,
+            )
+            for d in items
+        ],
+    )
+
+
+@router.get("/{tenant_id:uuid}/me/tenant/dialogs/{dialog_id:uuid}", response_model=DialogDetailResponse)
+async def get_tenant_dialog(
+    tenant_id: UUID,
+    dialog_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    messages = await get_dialog_messages_for_tenant(db, tenant_id, dialog_id)
+    if messages is None:
+        raise HTTPException(status_code=404, detail="dialog not found")
+    return DialogDetailResponse(
+        id=dialog_id,
+        messages=[MessageInDialog(role=m.role, content=m.content, created_at=m.created_at) for m in messages],
+    )
+
+
+# Dialogs (только свои — оставлено для совместимости, в UI используем tenant/dialogs)
 @router.get("/{tenant_id:uuid}/me/dialogs", response_model=DialogListResponse)
 async def list_user_dialogs(
     tenant_id: UUID,

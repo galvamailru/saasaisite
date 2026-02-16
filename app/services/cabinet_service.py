@@ -60,6 +60,41 @@ async def list_dialogs(
     return total, items
 
 
+async def list_tenant_dialogs(
+    db: AsyncSession,
+    tenant_id: UUID,
+    limit: int,
+    offset: int,
+) -> tuple[int, list]:
+    """Все диалоги тенанта (для админки: диалоги посетителей с ботом через iframe)."""
+    count_q = select(func.count()).select_from(Dialog).where(Dialog.tenant_id == tenant_id)
+    total = (await db.execute(count_q)).scalar() or 0
+    q = (
+        select(Dialog)
+        .where(Dialog.tenant_id == tenant_id)
+        .order_by(Dialog.updated_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(q)
+    dialogs = result.scalars().all()
+    items = []
+    for d in dialogs:
+        preview = None
+        msg_q = (
+            select(Message.content)
+            .where(Message.dialog_id == d.id)
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
+        msg_result = await db.execute(msg_q)
+        row = msg_result.scalar_one_or_none()
+        if row:
+            preview = (row[0] or "")[:PREVIEW_MAX_LEN] or None
+        items.append({"dialog": d, "preview": preview})
+    return total, items
+
+
 async def get_dialog_messages(
     db: AsyncSession,
     tenant_id: UUID,
@@ -75,6 +110,28 @@ async def get_dialog_messages(
     )
     dialog = result.scalar_one_or_none()
     if not dialog:
+        return None
+    msg_result = await db.execute(
+        select(Message)
+        .where(Message.dialog_id == dialog_id, Message.tenant_id == tenant_id)
+        .order_by(Message.created_at)
+    )
+    return list(msg_result.scalars().all())
+
+
+async def get_dialog_messages_for_tenant(
+    db: AsyncSession,
+    tenant_id: UUID,
+    dialog_id: UUID,
+) -> list | None:
+    """Сообщения диалога по tenant_id и dialog_id (админ может открыть любой диалог тенанта)."""
+    result = await db.execute(
+        select(Dialog).where(
+            Dialog.id == dialog_id,
+            Dialog.tenant_id == tenant_id,
+        )
+    )
+    if not result.scalar_one_or_none():
         return None
     msg_result = await db.execute(
         select(Message)

@@ -42,6 +42,7 @@ class DialogListItem(BaseModel):
     created_at: datetime
     updated_at: datetime
     preview: str | None = None
+    user_id: str | None = None  # для списка диалогов тенанта (посетитель iframe)
 
     class Config:
         from_attributes = True

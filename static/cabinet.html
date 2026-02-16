@@ -37,6 +37,14 @@
     .main-page-embed .embed-section { margin-top: 0; }
     .main-page-embed .embed-code { max-height: 280px; overflow-y: auto; }
     @media (max-width: 720px) { .main-page-wrap { flex-direction: column; } .main-page-embed { max-width: none; } }
+    .admin-chat-toggler { position: fixed; bottom: 24px; right: 24px; z-index: 1000; padding: 12px 20px; border: none; border-radius: 24px; background: #00acc1; color: #fff; font-size: 0.95rem; font-weight: 600; cursor: pointer; box-shadow: 0 4px 16px rgba(0,172,193,0.4); }
+    .admin-chat-toggler:hover { background: #0097a7; }
+    .admin-chat-popup { position: fixed; right: 24px; bottom: 72px; width: 400px; max-width: calc(100vw - 48px); max-height: 70vh; z-index: 1001; background: #fff; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); display: none; flex-direction: column; overflow: hidden; }
+    body.show-admin-chat .admin-chat-popup { display: flex; }
+    .admin-chat-popup-header { padding: 12px 16px; background: #00acc1; color: #fff; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+    .admin-chat-popup-header .close-btn { background: none; border: none; color: #fff; font-size: 1.4rem; cursor: pointer; line-height: 1; padding: 0 4px; }
+    .admin-chat-popup .chat-log { flex: 1; min-height: 200px; max-height: 360px; }
+    .admin-chat-popup .chat-input { margin: 0; padding: 8px; border-top: 1px solid #eee; }
     .chat-log { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 0.5rem; margin-bottom: 0.5rem; background: #fafafa; }
     .chat-msg { margin: 0.5rem 0; }
     .chat-msg.user { color: #06c; }
@@ -48,14 +56,19 @@
 <body>
   <nav>
     <a href="#" data-page="my">Главная</a>
-    <a href="#" data-page="dialogs">Мои диалоги</a>
+    <a href="#" data-page="dialogs">Диалоги</a>
     <a href="#" data-page="prompt">Промпт</a>
-    <a href="#" data-page="admin-chat">Админ-чат</a>
     <a href="#" data-page="leads">Лиды</a>
     <a href="#" data-page="profile">Профиль</a>
     <span id="authLinks"></span>
   </nav>
   <div id="content"></div>
+  <button type="button" id="adminChatToggler" class="admin-chat-toggler" aria-label="Админ-чат">Админ-чат</button>
+  <div id="adminChatPopup" class="admin-chat-popup">
+    <div class="admin-chat-popup-header">Помощник по промпту <button type="button" class="close-btn" id="adminChatClose" aria-label="Закрыть">×</button></div>
+    <div class="chat-log" id="adminChatLog"></div>
+    <div class="chat-input"><textarea id="adminChatInput" placeholder="Напишите, чем помочь..."></textarea><button type="button" id="adminChatSend">Отправить</button></div>
+  </div>
   <script>
     (function () {
       const path = window.location.pathname;
@@ -91,6 +104,8 @@
       function renderAuthLinks() {
         const token = localStorage.getItem('cip_access_token');
         const el = document.getElementById('authLinks');
+        const toggler = document.getElementById('adminChatToggler');
+        if (toggler) toggler.style.display = token ? '' : 'none';
         if (token) {
           el.innerHTML = '<a href="#" id="logoutBtn">Выйти</a>';
           const btn = document.getElementById('logoutBtn');
@@ -124,21 +139,21 @@
       async function loadDialogs() {
         if (!requireAuth()) return;
         await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/dialogs?limit=20&offset=0', { headers: headers() });
+        const r = await fetch(base + '/' + tenantId + '/me/tenant/dialogs?limit=50&offset=0', { headers: headers() });
         if (!r.ok) {
           document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки диалогов. Войдите в кабинет.</p>';
           return;
         }
         const data = await r.json();
         const items = data.items || [];
-        let html = '<h2>Мои диалоги</h2>';
+        let html = '<h2>Диалоги</h2>';
         if (items.length === 0) {
-          html += '<p class="hint">Пока нет диалогов. Перейдите на <a href="#" data-goto="my">Главную</a>, напишите боту в чате — диалоги появятся здесь (нужно быть авторизованным при отправке сообщений).</p>';
+          html += '<p class="hint">Пока нет диалогов. Диалоги посетителей, которые пишут боту через iframe на вашем сайте, появятся здесь.</p>';
         }
         html += '<ul class="list">';
         for (const d of items) {
           const preview = (d.preview || '').slice(0, 60) + (d.preview && d.preview.length > 60 ? '…' : '');
-          html += '<li><a href="#" class="dialog-link" data-dialog-id="' + (d.id || '') + '">' + (d.id || '') + '</a> ' + (d.updated_at || '') + ' — ' + escapeHtml(preview) + '</li>';
+          html += '<li><a href="#" class="dialog-link" data-dialog-id="' + (d.id || '') + '">' + escapeHtml(d.user_id || '') + '</a> ' + (d.updated_at || '') + ' — ' + escapeHtml(preview) + '</li>';
         }
         html += '</ul>';
         document.getElementById('content').innerHTML = html;
@@ -155,7 +170,7 @@
       async function loadDialogDetail(dialogId) {
         if (!requireAuth()) return;
         await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/dialogs/' + dialogId, { headers: headers() });
+        const r = await fetch(base + '/' + tenantId + '/me/tenant/dialogs/' + dialogId, { headers: headers() });
         if (!r.ok) {
           document.getElementById('content').innerHTML = '<p class="error">Диалог не найден.</p><p><a href="#" data-goto="dialogs">← Мои диалоги</a></p>';
           return;
@@ -241,55 +256,62 @@
         });
       }
 
-      async function loadAdminChat() {
-        if (!requireAuth()) return;
-        await ensureTenant();
-        let html = '<h2>Админ-чат</h2>';
-        html += '<p class="hint">Общайтесь с ботом: он предложит добавить или изменить чанки промпта. Прямое редактирование — в разделе <a href="#" data-goto="prompt">Промпт</a>.</p>';
-        html += '<div class="chat-log" id="adminChatLog"></div>';
-        html += '<div class="chat-input"><textarea id="adminChatInput" placeholder="Напишите, чем помочь..."></textarea><button id="adminChatSend">Отправить</button></div>';
-        document.getElementById('content').innerHTML = html;
+      let adminChatInited = false;
+      const adminChatHistory = [];
 
+      function initAdminChatOnce() {
+        if (adminChatInited) return;
         const log = document.getElementById('adminChatLog');
         const input = document.getElementById('adminChatInput');
         const send = document.getElementById('adminChatSend');
-        const adminChatHistory = [];
-        appendMsg('assistant', 'Здравствуйте! Чем могу помочь? Хотите добавить или изменить чанки промпта бота для клиентов?');
-
-        function appendMsg(role, text) {
+        if (!log || !send) return;
+        function appendAdminMsg(role, text) {
           const div = document.createElement('div');
           div.className = 'chat-msg ' + role;
           div.textContent = (role === 'user' ? 'Вы: ' : 'Бот: ') + text;
           log.appendChild(div);
           log.scrollTop = log.scrollHeight;
         }
-
+        appendAdminMsg('assistant', 'Здравствуйте! Чем могу помочь? Хотите добавить или изменить чанки промпта бота для клиентов?');
         send.addEventListener('click', async () => {
           const msg = (input.value || '').trim();
           if (!msg) return;
+          if (!tenantId) await ensureTenant();
           input.value = '';
-          appendMsg('user', msg);
+          appendAdminMsg('user', msg);
           adminChatHistory.push({ role: 'user', content: msg });
           const res = await fetch(base + '/' + tenantId + '/admin/chat', {
             method: 'POST',
             headers: headers(true),
-            body: JSON.stringify({
-              message: msg,
-              history: adminChatHistory.slice(0, -1)
-            })
+            body: JSON.stringify({ message: msg, history: adminChatHistory.slice(0, -1) })
           });
           if (!res.ok) {
             const errText = await res.text();
-            appendMsg('assistant', 'Ошибка: ' + errText);
+            appendAdminMsg('assistant', 'Ошибка: ' + errText);
             adminChatHistory.push({ role: 'assistant', content: 'Ошибка: ' + errText });
             return;
           }
           const data = await res.json();
           const reply = data.reply || '';
-          appendMsg('assistant', reply);
+          appendAdminMsg('assistant', reply);
           adminChatHistory.push({ role: 'assistant', content: reply });
         });
+        adminChatInited = true;
       }
+
+      document.getElementById('adminChatToggler').addEventListener('click', function() {
+        document.body.classList.toggle('show-admin-chat');
+        if (document.body.classList.contains('show-admin-chat')) {
+          if (requireAuth()) {
+            ensureTenant().then(function() { initAdminChatOnce(); });
+          } else {
+            initAdminChatOnce();
+          }
+        }
+      });
+      document.getElementById('adminChatClose').addEventListener('click', function() {
+        document.body.classList.remove('show-admin-chat');
+      });
 
       function escapeHtml(s) {
         if (s == null) return '';
@@ -411,7 +433,6 @@
         else if (page === 'dialogs' && segs[3]) loadDialogDetail(segs[3]);
         else if (page === 'dialogs') loadDialogs();
         else if (page === 'prompt') loadChunks();
-        else if (page === 'admin-chat') loadAdminChat();
         else if (page === 'leads') loadLeads();
         else if (page === 'profile') loadProfile();
         else loadMy();
