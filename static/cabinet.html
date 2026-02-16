@@ -345,7 +345,27 @@
           log.appendChild(div);
           log.scrollTop = log.scrollHeight;
         }
-        appendAdminMsg('assistant', 'Здравствуйте! Я — Админ-помощник. Помогаю заполнять промпт чат-бота чанками (до 2000 символов). Напишите, с чего начнём — добавим или изменим чанки.');
+        (async function sendInitialAndShowReply() {
+          const initMsg = 'Начало сеанса. Посмотри текущее состояние чанков выше. Сразу задай первый или следующий вопрос по сценарию (роль и задача → стиль → контекст и ограничения → формат ответа → формулировки чанков). Не приветствуй и не представляйся — только один вопрос или предложение по контексту.';
+          if (!tenantId) await ensureTenant();
+          adminChatHistory.push({ role: 'user', content: initMsg });
+          try {
+            const res = await fetch(base + '/' + tenantId + '/admin/chat', {
+              method: 'POST',
+              headers: headers(true),
+              body: JSON.stringify({ message: initMsg, history: [] })
+            });
+            const data = res.ok ? await res.json() : null;
+            const reply = (data && data.reply) ? data.reply : (res.ok ? '' : 'Ошибка загрузки. Попробуйте написать сообщение.');
+            if (reply) {
+              appendAdminMsg('assistant', reply);
+              adminChatHistory.push({ role: 'assistant', content: reply });
+            }
+          } catch (e) {
+            appendAdminMsg('assistant', 'Ошибка: ' + (e.message || 'сеть'));
+            adminChatHistory.push({ role: 'assistant', content: 'Ошибка: ' + (e.message || 'сеть') });
+          }
+        })();
         send.addEventListener('click', async () => {
           const msg = (input.value || '').trim();
           if (!msg) return;
