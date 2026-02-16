@@ -51,6 +51,26 @@
     .chat-msg.assistant { color: #363; }
     .chat-input { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
     .chat-input textarea { flex: 1; min-height: 60px; resize: vertical; }
+    .date-filter { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.25rem; padding: 1rem; background: #f5f5f5; border-radius: 10px; }
+    .date-filter label { font-size: 0.9rem; color: #555; }
+    .date-filter input[type="date"] { padding: 0.5rem 0.75rem; border: 1px solid #ccc; border-radius: 8px; font-size: 0.95rem; }
+    .date-filter button { padding: 0.5rem 1.25rem; border: none; border-radius: 8px; background: #00acc1; color: #fff; cursor: pointer; font-size: 0.9rem; }
+    .date-filter button:hover { background: #0097a7; }
+    .date-filter .reset-btn { background: #888; }
+    .date-filter .reset-btn:hover { background: #666; }
+    .dialog-cards { display: grid; gap: 0.75rem; }
+    .dialog-card { padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid #e0e0e0; background: #fff; transition: box-shadow 0.2s; cursor: pointer; }
+    .dialog-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .dialog-card.has-lead { border-left: 4px solid #2e7d32; background: #f1f8e9; }
+    .dialog-card .dialog-meta { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin-bottom: 0.5rem; font-size: 0.85rem; color: #666; }
+    .dialog-card .dialog-meta .date { font-weight: 600; color: #333; }
+    .dialog-card .dialog-meta .msg-count { color: #00acc1; }
+    .dialog-card .dialog-meta .lead-badge { color: #2e7d32; font-weight: 600; }
+    .dialog-card .dialog-preview { font-size: 0.9rem; color: #555; line-height: 1.4; }
+    .leads-list .lead-item { padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid #e0e0e0; margin-bottom: 0.75rem; background: #fff; }
+    .leads-list .lead-item .contact { font-weight: 600; font-size: 1rem; color: #333; }
+    .leads-list .lead-item .meta { font-size: 0.85rem; color: #666; margin-top: 0.35rem; }
+    .leads-list .lead-item .lead-date { font-weight: 500; color: #00acc1; margin-top: 0.25rem; }
   </style>
 </head>
 <body>
@@ -136,10 +156,21 @@
         });
       }
 
-      async function loadDialogs() {
+      function formatDate(isoStr) {
+        if (!isoStr) return '—';
+        try {
+          const d = new Date(isoStr);
+          return isNaN(d.getTime()) ? isoStr : d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        } catch (_) { return isoStr; }
+      }
+
+      async function loadDialogs(dateFromVal, dateToVal) {
         if (!requireAuth()) return;
         await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/tenant/dialogs?limit=50&offset=0', { headers: headers() });
+        let url = base + '/' + tenantId + '/me/tenant/dialogs?limit=50&offset=0';
+        if (dateFromVal) url += '&date_from=' + encodeURIComponent(dateFromVal);
+        if (dateToVal) url += '&date_to=' + encodeURIComponent(dateToVal);
+        const r = await fetch(url, { headers: headers() });
         if (!r.ok) {
           document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки диалогов. Войдите в кабинет.</p>';
           return;
@@ -147,23 +178,51 @@
         const data = await r.json();
         const items = data.items || [];
         let html = '<h2>Диалоги</h2>';
+        html += '<div class="date-filter">';
+        html += '<label>С: <input type="date" id="dialogsDateFrom" value="' + escapeHtml(dateFromVal || '') + '"></label>';
+        html += '<label>По: <input type="date" id="dialogsDateTo" value="' + escapeHtml(dateToVal || '') + '"></label>';
+        html += '<button type="button" id="dialogsFilterBtn">Применить</button>';
+        html += '<button type="button" class="reset-btn" id="dialogsFilterReset">Сбросить</button>';
+        html += '<span class="hint" style="margin-left:0.5rem;">Всего: ' + (data.total || 0) + '</span>';
+        html += '</div>';
         if (items.length === 0) {
-          html += '<p class="hint">Пока нет диалогов. Диалоги посетителей, которые пишут боту через iframe на вашем сайте, появятся здесь.</p>';
+          html += '<p class="hint">Нет диалогов за выбранный период. Диалоги посетителей с ботом через iframe появятся здесь.</p>';
+        } else {
+          html += '<div class="dialog-cards">';
+          for (const d of items) {
+            const preview = (d.preview || '').slice(0, 80) + (d.preview && d.preview.length > 80 ? '…' : '');
+            const leadClass = d.has_lead ? ' has-lead' : '';
+            html += '<div class="dialog-card' + leadClass + '" data-dialog-id="' + escapeHtml(d.id) + '">';
+            html += '<div class="dialog-meta">';
+            html += '<span class="date">' + formatDate(d.updated_at) + '</span>';
+            html += '<span class="msg-count">' + (d.message_count || 0) + ' сообщ.</span>';
+            if (d.has_lead) html += '<span class="lead-badge">✓ Лид</span>';
+            html += '<span>' + escapeHtml(d.user_id || '') + '</span>';
+            html += '</div>';
+            html += '<div class="dialog-preview">' + escapeHtml(preview) + '</div>';
+            html += '</div>';
+          }
+          html += '</div>';
         }
-        html += '<ul class="list">';
-        for (const d of items) {
-          const preview = (d.preview || '').slice(0, 60) + (d.preview && d.preview.length > 60 ? '…' : '');
-          html += '<li><a href="#" class="dialog-link" data-dialog-id="' + (d.id || '') + '">' + escapeHtml(d.user_id || '') + '</a> ' + (d.updated_at || '') + ' — ' + escapeHtml(preview) + '</li>';
-        }
-        html += '</ul>';
         document.getElementById('content').innerHTML = html;
-        document.getElementById('content').querySelectorAll('a.dialog-link').forEach(function(a) {
-          a.addEventListener('click', function(e) {
-            e.preventDefault();
-            const id = a.getAttribute('data-dialog-id');
+        document.getElementById('content').querySelectorAll('.dialog-card').forEach(function(el) {
+          el.addEventListener('click', function() {
+            const id = el.getAttribute('data-dialog-id');
             window.history.pushState({}, '', '/' + tenantSlug + '/my/dialogs/' + id);
             route();
           });
+        });
+        var filterBtn = document.getElementById('dialogsFilterBtn');
+        if (filterBtn) filterBtn.addEventListener('click', function() {
+          var from = document.getElementById('dialogsDateFrom').value;
+          var to = document.getElementById('dialogsDateTo').value;
+          loadDialogs(from || undefined, to || undefined);
+        });
+        var resetBtn = document.getElementById('dialogsFilterReset');
+        if (resetBtn) resetBtn.addEventListener('click', function() {
+          document.getElementById('dialogsDateFrom').value = '';
+          document.getElementById('dialogsDateTo').value = '';
+          loadDialogs();
         });
       }
 
@@ -320,10 +379,13 @@
         return div.innerHTML;
       }
 
-      async function loadLeads() {
+      async function loadLeads(dateFromVal, dateToVal) {
         if (!requireAuth()) return;
         await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/leads?limit=50&offset=0', { headers: headers() });
+        let url = base + '/' + tenantId + '/me/leads?limit=50&offset=0';
+        if (dateFromVal) url += '&date_from=' + encodeURIComponent(dateFromVal);
+        if (dateToVal) url += '&date_to=' + encodeURIComponent(dateToVal);
+        const r = await fetch(url, { headers: headers() });
         if (!r.ok) {
           const errBody = await r.text();
           let errMsg = 'Ошибка загрузки лидов.';
@@ -340,15 +402,21 @@
         const leads = Array.isArray(data) ? data : (data.items || []);
         let html = '<h2>Лиды</h2>';
         html += '<p class="hint">Контакты (email, телефон), оставленные посетителями в чате. Один лид на диалог.</p>';
+        html += '<div class="date-filter">';
+        html += '<label>С: <input type="date" id="leadsDateFrom" value="' + escapeHtml(dateFromVal || '') + '"></label>';
+        html += '<label>По: <input type="date" id="leadsDateTo" value="' + escapeHtml(dateToVal || '') + '"></label>';
+        html += '<button type="button" id="leadsFilterBtn">Применить</button>';
+        html += '<button type="button" class="reset-btn" id="leadsFilterReset">Сбросить</button>';
+        html += '</div>';
         if (leads.length === 0) {
-          html += '<p>Нет лидов</p>';
+          html += '<p>Нет лидов за выбранный период.</p>';
         } else {
           html += '<ul class="list leads-list">';
           for (const l of leads) {
             html += '<li class="lead-item">';
             html += '<span class="contact">' + escapeHtml(l.contact_text) + '</span>';
-            html += '<div class="meta">user: ' + escapeHtml(l.user_id) + ' · диалог: <a href="#" class="lead-dialog-link" data-dialog-id="' + escapeHtml(l.dialog_id) + '">' + escapeHtml(l.dialog_id) + '</a></div>';
-            html += '<div class="meta">' + (l.updated_at || l.created_at || '') + '</div>';
+            html += '<div class="meta">user: ' + escapeHtml(l.user_id) + ' · диалог: <a href="#" class="lead-dialog-link" data-dialog-id="' + escapeHtml(l.dialog_id) + '">открыть</a></div>';
+            html += '<div class="lead-date">' + formatDate(l.updated_at || l.created_at) + '</div>';
             html += '</li>';
           }
           html += '</ul>';
@@ -361,6 +429,16 @@
             window.history.pushState({}, '', '/' + tenantSlug + '/my/dialogs/' + dialogId);
             route();
           });
+        });
+        var filterBtn = document.getElementById('leadsFilterBtn');
+        if (filterBtn) filterBtn.addEventListener('click', function() {
+          loadLeads(document.getElementById('leadsDateFrom').value || undefined, document.getElementById('leadsDateTo').value || undefined);
+        });
+        var resetBtn = document.getElementById('leadsFilterReset');
+        if (resetBtn) resetBtn.addEventListener('click', function() {
+          document.getElementById('leadsDateFrom').value = '';
+          document.getElementById('leadsDateTo').value = '';
+          loadLeads();
         });
       }
 

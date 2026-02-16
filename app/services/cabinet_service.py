@@ -1,7 +1,8 @@
 """Cabinet: dialogs list, dialog detail, saved items, profile."""
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Dialog, Lead, Message, SavedItem, UserProfile
@@ -65,17 +66,22 @@ async def list_tenant_dialogs(
     tenant_id: UUID,
     limit: int,
     offset: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> tuple[int, list]:
-    """Все диалоги тенанта (для админки: диалоги посетителей с ботом через iframe)."""
+    """Все диалоги тенанта. date_from/date_to — фильтр по updated_at (включительно)."""
     count_q = select(func.count()).select_from(Dialog).where(Dialog.tenant_id == tenant_id)
+    q = select(Dialog).where(Dialog.tenant_id == tenant_id)
+    if date_from is not None:
+        dt_from = datetime.combine(date_from, datetime.min.time())
+        count_q = count_q.where(Dialog.updated_at >= dt_from)
+        q = q.where(Dialog.updated_at >= dt_from)
+    if date_to is not None:
+        dt_to = datetime.combine(date_to + timedelta(days=1), datetime.min.time())
+        count_q = count_q.where(Dialog.updated_at < dt_to)
+        q = q.where(Dialog.updated_at < dt_to)
     total = (await db.execute(count_q)).scalar() or 0
-    q = (
-        select(Dialog)
-        .where(Dialog.tenant_id == tenant_id)
-        .order_by(Dialog.updated_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    q = q.order_by(Dialog.updated_at.desc()).limit(limit).offset(offset)
     result = await db.execute(q)
     dialogs = result.scalars().all()
     items = []
@@ -91,7 +97,11 @@ async def list_tenant_dialogs(
         row = msg_result.scalar_one_or_none()
         if row:
             preview = (row[0] or "")[:PREVIEW_MAX_LEN] or None
-        items.append({"dialog": d, "preview": preview})
+        cnt_result = await db.execute(select(func.count()).select_from(Message).where(Message.dialog_id == d.id))
+        message_count = cnt_result.scalar() or 0
+        lead_exists = await db.execute(select(exists().where(Lead.dialog_id == d.id, Lead.tenant_id == tenant_id)))
+        has_lead = lead_exists.scalar() or False
+        items.append({"dialog": d, "preview": preview, "message_count": message_count, "has_lead": has_lead})
     return total, items
 
 
@@ -186,16 +196,21 @@ async def list_leads(
     tenant_id: UUID,
     limit: int,
     offset: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> tuple[int, list]:
     count_q = select(func.count()).select_from(Lead).where(Lead.tenant_id == tenant_id)
+    q = select(Lead).where(Lead.tenant_id == tenant_id)
+    if date_from is not None:
+        dt_from = datetime.combine(date_from, datetime.min.time())
+        count_q = count_q.where(Lead.updated_at >= dt_from)
+        q = q.where(Lead.updated_at >= dt_from)
+    if date_to is not None:
+        dt_to = datetime.combine(date_to + timedelta(days=1), datetime.min.time())
+        count_q = count_q.where(Lead.updated_at < dt_to)
+        q = q.where(Lead.updated_at < dt_to)
     total = (await db.execute(count_q)).scalar() or 0
-    q = (
-        select(Lead)
-        .where(Lead.tenant_id == tenant_id)
-        .order_by(Lead.updated_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+    q = q.order_by(Lead.updated_at.desc()).limit(limit).offset(offset)
     result = await db.execute(q)
     return total, list(result.scalars().all())
 

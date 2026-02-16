@@ -105,11 +105,18 @@ async def list_tenant_dialogs_endpoint(
     user_id: str = Depends(get_cabinet_user),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    date_from: str | None = Query(None, description="YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="YYYY-MM-DD"),
 ):
+    from datetime import datetime as dt
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    total, items = await list_tenant_dialogs(db, tenant_id, limit=limit, offset=offset)
+    d_from = dt.strptime(date_from, "%Y-%m-%d").date() if date_from else None
+    d_to = dt.strptime(date_to, "%Y-%m-%d").date() if date_to else None
+    total, items = await list_tenant_dialogs(
+        db, tenant_id, limit=limit, offset=offset, date_from=d_from, date_to=d_to
+    )
     return DialogListResponse(
         total=total,
         items=[
@@ -119,6 +126,8 @@ async def list_tenant_dialogs_endpoint(
                 updated_at=d["dialog"].updated_at,
                 preview=d["preview"],
                 user_id=d["dialog"].user_id,
+                message_count=d.get("message_count", 0),
+                has_lead=d.get("has_lead", False),
             )
             for d in items
         ],
@@ -357,11 +366,18 @@ async def list_user_leads(
     user_id: str = Depends(get_cabinet_user),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    date_from: str | None = Query(None, description="YYYY-MM-DD"),
+    date_to: str | None = Query(None, description="YYYY-MM-DD"),
 ):
+    from datetime import datetime as dt
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _, items = await list_leads(db, tenant_id, limit=limit, offset=offset)
+    d_from = dt.strptime(date_from, "%Y-%m-%d").date() if date_from else None
+    d_to = dt.strptime(date_to, "%Y-%m-%d").date() if date_to else None
+    _, items = await list_leads(
+        db, tenant_id, limit=limit, offset=offset, date_from=d_from, date_to=d_to
+    )
     return [LeadResponse.model_validate(l) for l in items]
 
 
