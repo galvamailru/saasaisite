@@ -316,18 +316,20 @@ async def list_user_leads(
     return [LeadResponse.model_validate(l) for l in items]
 
 
-# Embed: код iframe для вставки чата на сайт
+# Embed: код iframe для вставки чата на сайт (URL из FRONTEND_BASE_URL, в пути — slug тенанта)
 @router.get("/{tenant_id:uuid}/me/embed", response_model=EmbedCodeResponse)
 async def get_embed_code(
     tenant_id: UUID,
-    request: Request,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_cabinet_user),
 ):
+    from app.config import settings
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    base_url = str(request.base_url).rstrip("/")
+    base_url = (settings.frontend_base_url or "").strip().rstrip("/")
+    if not base_url:
+        base_url = "https://YOUR_DOMAIN"
     chat_url = f"{base_url}/{tenant.slug}/chat/embed"
     iframe_code = f'<iframe src="{chat_url}" width="400" height="600" frameborder="0" title="Чат"></iframe>'
     return EmbedCodeResponse(chat_url=chat_url, iframe_code=iframe_code)

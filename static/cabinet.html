@@ -242,8 +242,8 @@
         const code = (data.iframe_code || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         document.getElementById('content').innerHTML =
           '<h2>Вставка чата на сайт</h2>' +
-          '<p class="hint">Тенант: <strong>' + escapeHtml(tenantSlug) + '</strong>. Ссылка и код iframe привязаны к этому тенанту.</p>' +
-          '<p class="hint">Скопируйте код ниже и вставьте в HTML-страницу вашего сайта. Чат откроется в iframe по ссылке: <strong>' + escapeHtml(data.chat_url || '') + '</strong></p>' +
+          '<p class="hint">Тенант: <strong>' + escapeHtml(tenantSlug) + '</strong>. В коде ниже URL чата: ваш публичный домен + <code>/' + escapeHtml(tenantSlug) + '/chat/embed</code>. Задайте в .env переменную <code>FRONTEND_BASE_URL</code> (например <code>https://ваш-домен.ru</code>), чтобы в коде был правильный адрес.</p>' +
+          '<p class="hint">Скопируйте код и вставьте в HTML вашего сайта. Ссылка iframe: <strong>' + escapeHtml(data.chat_url || '') + '</strong></p>' +
           '<pre class="embed-code" id="embedCodePre">' + code + '</pre>' +
           '<div class="embed-actions"><button type="button" id="copyEmbedBtn">Копировать код</button></div>';
         document.getElementById('copyEmbedBtn').addEventListener('click', () => {

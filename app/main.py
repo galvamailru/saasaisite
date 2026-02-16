@@ -33,6 +33,13 @@ app.include_router(cabinet.router)
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 STATIC_DIR.mkdir(exist_ok=True)
 
+
+@app.get("/static/index.html")
+async def block_static_index():
+    """Страницы index нет — вход только через /{tenant_slug}/login или /register."""
+    raise HTTPException(status_code=404, detail="Not found")
+
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
