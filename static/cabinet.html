@@ -314,10 +314,19 @@
         await ensureTenant();
         const r = await fetch(base + '/' + tenantId + '/me/leads?limit=50&offset=0', { headers: headers() });
         if (!r.ok) {
-          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки лидов.</p>';
+          const errBody = await r.text();
+          let errMsg = 'Ошибка загрузки лидов.';
+          try { const j = JSON.parse(errBody); errMsg = j.detail || errMsg; } catch (_) {}
+          if (r.status === 401) errMsg = 'Войдите в кабинет.';
+          document.getElementById('content').innerHTML = '<p class="error">' + escapeHtml(errMsg) + '</p>';
           return;
         }
-        const leads = await r.json();
+        let data;
+        try { data = await r.json(); } catch (_) {
+          document.getElementById('content').innerHTML = '<p class="error">Неверный ответ сервера.</p>';
+          return;
+        }
+        const leads = Array.isArray(data) ? data : (data.items || []);
         let html = '<h2>Лиды</h2>';
         html += '<p class="hint">Контакты (email, телефон), оставленные посетителями в чате. Один лид на диалог.</p>';
         if (leads.length === 0) {
@@ -363,7 +372,19 @@
         document.getElementById('content').innerHTML =
           '<h2>Главная</h2>' +
           '<p class="hint">Тестируйте бота в чате ниже. Диалоги сохраняются и отображаются в <a href="#" data-goto="dialogs">Мои диалоги</a>.</p>' +
-          '<iframe src="/' + tenantSlug + '/chat/embed" style="width:100%; height:75vh; border:1px solid #ddd; border-radius:12px;" title="Чат для теста"></iframe>';
+          '<iframe id="chatEmbedFrame" src="/' + tenantSlug + '/chat/embed" style="width:100%; height:75vh; border:1px solid #ddd; border-radius:12px;" title="Чат для теста"></iframe>';
+        var frame = document.getElementById('chatEmbedFrame');
+        if (frame) {
+          frame.addEventListener('load', function() {
+            try {
+              var uid = localStorage.getItem('cip_user_id');
+              var token = localStorage.getItem('cip_access_token');
+              if (uid && token) {
+                frame.contentWindow.postMessage({ type: 'cip_auth', user_id: uid, token: token }, window.location.origin);
+              }
+            } catch (_) {}
+          });
+        }
       }
 
       function route() {

@@ -30,6 +30,7 @@ from app.services.cabinet_service import (
     get_saved_by_id,
     get_tenant_by_id,
     list_dialogs,
+    list_leads,
     list_saved,
     upsert_profile,
 )

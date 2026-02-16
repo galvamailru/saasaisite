@@ -248,6 +248,15 @@
       localStorage.setItem('cip_user_id', userId);
       let dialogId = null;
 
+      window.addEventListener('message', function(event) {
+        if (event.origin !== window.location.origin) return;
+        if (event.data && event.data.type === 'cip_auth' && event.data.user_id && event.data.token) {
+          userId = event.data.user_id;
+          localStorage.setItem('cip_user_id', userId);
+          localStorage.setItem('cip_access_token', event.data.token);
+        }
+      });
+
       const contentCards = [];
 
       function escapeHtml(s) {
