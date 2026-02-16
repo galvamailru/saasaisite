@@ -28,7 +28,7 @@ async def _sse_stream(tenant_id: UUID, user_id: str, dialog_id: UUID | None, mes
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
         return
     dialog = await get_or_create_dialog(db, tenant_id, user_id, dialog_id)
-    history = await get_dialog_messages_for_llm(db, dialog.id)
+    history = await get_dialog_messages_for_llm(db, dialog.id, tenant_id)
     history.append({"role": "user", "content": message_text})
     await save_message(db, tenant_id, user_id, dialog.id, "user", message_text)
     await save_lead_if_contact(db, tenant_id, user_id, dialog.id, message_text)

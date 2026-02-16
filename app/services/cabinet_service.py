@@ -77,7 +77,9 @@ async def get_dialog_messages(
     if not dialog:
         return None
     msg_result = await db.execute(
-        select(Message).where(Message.dialog_id == dialog_id).order_by(Message.created_at)
+        select(Message)
+        .where(Message.dialog_id == dialog_id, Message.tenant_id == tenant_id)
+        .order_by(Message.created_at)
     )
     return list(msg_result.scalars().all())
 

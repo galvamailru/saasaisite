@@ -1,4 +1,7 @@
-"""SQLAlchemy models: tenant, dialog, message, saved_item, user_profile, prompt_chunk, lead."""
+"""SQLAlchemy models: tenant, dialog, message, saved_item, user_profile, prompt_chunk, lead.
+
+Мультитенантность: все сущности, кроме Tenant и TenantUser, содержат tenant_id.
+Все выборки и записи должны фильтроваться по tenant_id для изоляции данных тенанта."""
 import uuid
 from datetime import datetime
 

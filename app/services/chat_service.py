@@ -49,9 +49,14 @@ async def save_message(
     await db.flush()
 
 
-async def get_dialog_messages_for_llm(db: AsyncSession, dialog_id: UUID) -> list[dict[str, str]]:
+async def get_dialog_messages_for_llm(
+    db: AsyncSession, dialog_id: UUID, tenant_id: UUID
+) -> list[dict[str, str]]:
+    """История диалога для LLM. Фильтр по tenant_id — изоляция данных тенанта."""
     result = await db.execute(
-        select(Message.role, Message.content).where(Message.dialog_id == dialog_id).order_by(Message.created_at)
+        select(Message.role, Message.content)
+        .where(Message.dialog_id == dialog_id, Message.tenant_id == tenant_id)
+        .order_by(Message.created_at)
     )
     rows = result.all()
     return [{"role": r.role, "content": r.content} for r in rows]
