@@ -907,23 +907,100 @@
         }
         const p = await r.json();
         const sysEsc = (p.system_prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const s = p.prompt_survey || {};
         let html = '<h2>Профиль</h2>';
-        html += '<p class="hint">Здесь вы можете задать базовый системный промпт клиентского бота (основные инструкции). Дополнительные детали можно добавлять чанками в разделе «Промпт».</p>';
+        html += '<p class="hint">Здесь вы можете задать базовый системный промпт клиентского бота и заполнить анкету для генерации коммерческого промпта.</p>';
         html += '<form id="profileForm" class="panel">';
         html += '<p><strong>user_id:</strong> ' + (p.user_id || '') + '</p>';
         html += '<label>Имя (отображается в кабинете)<br><input type="text" id="profileDisplayName" value="' + (p.display_name || '') + '" maxlength="256"></label>';
         html += '<label>Контакт (email/телефон/мессенджер)<br><input type="text" id="profileContact" value="' + (p.contact || '') + '" maxlength="256"></label>';
-        html += '<label>Системный промпт клиентского бота<br><textarea id="profileSystemPrompt" rows="12" spellcheck="false" placeholder="Опишите здесь роль агента, бизнес-цель и ключевые правила. Можно вписать ответы по анкете: роль и цель, сценарий диалога, продукты и триггеры, как запрашивать контакты, как реагировать на нештатные ситуации.">' + sysEsc + '</textarea></label>';
+        html += '<label>Системный промпт клиентского бота<br><textarea id="profileSystemPrompt" rows="10" spellcheck="false" placeholder="Опишите здесь роль агента, бизнес-цель и ключевые правила. В дальнейшем можно генерировать этот текст по анкете ниже.">' + sysEsc + '</textarea></label>';
+
+        // Анкета по блокам
+        html += '<h3>Анкета для коммерческого промпта</h3>';
+        html += '<div class="panel">';
+        // Блок 1
+        html += '<h4>Блок 1. Роль и глобальная цель</h4>';
+        html += '<label>Компания и имя агента<br><textarea id="qCompanyAgent" rows="2">' + (s.company_and_agent_name || '') + '</textarea></label>';
+        html += '<label>Главная проблема клиента, которую решает агент<br><textarea id="qMainProblem" rows="2">' + (s.main_problem || '') + '</textarea></label>';
+        html += '<label>Главная цель агента в конце диалога<br><textarea id="qMainGoal" rows="2">' + (s.main_goal || '') + '</textarea></label>';
+        html += '<label>Тон общения (стиль бренда)<br><textarea id="qTone" rows="2">' + (s.tone_of_voice || '') + '</textarea></label>';
+
+        // Блок 2
+        html += '<h4>Блок 2. Воронка диалога и первый контакт</h4>';
+        html += '<label>Приветствие (1–2 предложения с УТП и вопросом)<br><textarea id="qGreeting" rows="3">' + (s.greeting || '') + '</textarea></label>';
+        html += '<label>Ответ на общие вопросы («Что вы умеете?», «Сколько стоит?») — 2 предложения<br><textarea id="qGenericAnswer" rows="3">' + (s.generic_question_answer || '') + '</textarea></label>';
+        html += '<label>Фраза для возврата к диалогу после общего вопроса<br><textarea id="qReturnPhrase" rows="2">' + (s.return_to_dialog_phrase || '') + '</textarea></label>';
+
+        // Блок 3
+        html += '<h4>Блок 3. Товары / Услуги и триггеры</h4>';
+        html += '<p class="hint">Упрощённо: для каждого продукта опишите, какие слова говорит клиент, что отвечает агент и какой задаёт уточняющий вопрос.</p>';
+        html += '<label>Продукт 1 — описание<br><textarea id="qProduct1" rows="2">' + (s.product1 || '') + '</textarea></label>';
+        html += '<label>Продукт 1 — триггерные слова клиента<br><textarea id="qProduct1Triggers" rows="2">' + (s.product1_triggers || '') + '</textarea></label>';
+        html += '<label>Продукт 1 — немедленный ответ агента<br><textarea id="qProduct1Reaction" rows="2">' + (s.product1_reaction || '') + '</textarea></label>';
+        html += '<label>Продукт 1 — уточняющий вопрос<br><textarea id="qProduct1Q" rows="2">' + (s.product1_qualifying_question || '') + '</textarea></label>';
+
+        html += '<label>Продукт 2 — описание<br><textarea id="qProduct2" rows="2">' + (s.product2 || '') + '</textarea></label>';
+        html += '<label>Продукт 2 — триггерные слова клиента<br><textarea id="qProduct2Triggers" rows="2">' + (s.product2_triggers || '') + '</textarea></label>';
+        html += '<label>Продукт 2 — немедленный ответ агента<br><textarea id="qProduct2Reaction" rows="2">' + (s.product2_reaction || '') + '</textarea></label>';
+        html += '<label>Продукт 2 — уточняющий вопрос<br><textarea id="qProduct2Q" rows="2">' + (s.product2_qualifying_question || '') + '</textarea></label>';
+
+        html += '<label>Продукт 3 — описание<br><textarea id="qProduct3" rows="2">' + (s.product3 || '') + '</textarea></label>';
+        html += '<label>Продукт 3 — триггерные слова клиента<br><textarea id="qProduct3Triggers" rows="2">' + (s.product3_triggers || '') + '</textarea></label>';
+        html += '<label>Продукт 3 — немедленный ответ агента<br><textarea id="qProduct3Reaction" rows="2">' + (s.product3_reaction || '') + '</textarea></label>';
+        html += '<label>Продукт 3 — уточняющий вопрос<br><textarea id="qProduct3Q" rows="2">' + (s.product3_qualifying_question || '') + '</textarea></label>';
+
+        // Блок 4
+        html += '<h4>Блок 4. Квалификация и переход к действию</h4>';
+        html += '<label>Маркеры «горячего» лида (после каких слов пора просить контакт)<br><textarea id="qHotMarkers" rows="3">' + (s.hot_lead_markers || '') + '</textarea></label>';
+        html += '<label>Фразы для перехода к сбору контактов (2–3 варианта)<br><textarea id="qTransitionPhrases" rows="3">' + (s.transition_phrases || '') + '</textarea></label>';
+        html += '<label>Какие контакты собираем и как проверяем (телефон/email/мессенджеры)<br><textarea id="qContactsCollect" rows="3">' + (s.contacts_to_collect || '') + '</textarea></label>';
+        html += '<label>Формат телефона / примеры валидных номеров<br><textarea id="qPhoneFormats" rows="2">' + (s.phone_format_notes || '') + '</textarea></label>';
+
+        // Блок 5
+        html += '<h4>Блок 5. Нештатные ситуации и безопасность</h4>';
+        html += '<label>Как реагировать на оскорбления, спам, бессмысленный текст<br><textarea id="qAbuseReaction" rows="3">' + (s.abuse_reaction || '') + '</textarea></label>';
+        html += '<label>Что делать, если агент не может ответить на вопрос (узкая тема)<br><textarea id="qUnknownReaction" rows="3">' + (s.unknown_answer_reaction || '') + '</textarea></label>';
+        html += '</div>';
+
         html += '<div style="margin-top:1rem;"><button type="submit">Сохранить профиль</button></div>';
         html += '</form>';
         document.getElementById('content').innerHTML = html;
         const form = document.getElementById('profileForm');
         form.addEventListener('submit', async function(e) {
           e.preventDefault();
+          const survey = {
+            company_and_agent_name: document.getElementById('qCompanyAgent').value || null,
+            main_problem: document.getElementById('qMainProblem').value || null,
+            main_goal: document.getElementById('qMainGoal').value || null,
+            tone_of_voice: document.getElementById('qTone').value || null,
+            greeting: document.getElementById('qGreeting').value || null,
+            generic_question_answer: document.getElementById('qGenericAnswer').value || null,
+            return_to_dialog_phrase: document.getElementById('qReturnPhrase').value || null,
+            product1: document.getElementById('qProduct1').value || null,
+            product1_triggers: document.getElementById('qProduct1Triggers').value || null,
+            product1_reaction: document.getElementById('qProduct1Reaction').value || null,
+            product1_qualifying_question: document.getElementById('qProduct1Q').value || null,
+            product2: document.getElementById('qProduct2').value || null,
+            product2_triggers: document.getElementById('qProduct2Triggers').value || null,
+            product2_reaction: document.getElementById('qProduct2Reaction').value || null,
+            product2_qualifying_question: document.getElementById('qProduct2Q').value || null,
+            product3: document.getElementById('qProduct3').value || null,
+            product3_triggers: document.getElementById('qProduct3Triggers').value || null,
+            product3_reaction: document.getElementById('qProduct3Reaction').value || null,
+            product3_qualifying_question: document.getElementById('qProduct3Q').value || null,
+            hot_lead_markers: document.getElementById('qHotMarkers').value || null,
+            transition_phrases: document.getElementById('qTransitionPhrases').value || null,
+            contacts_to_collect: document.getElementById('qContactsCollect').value || null,
+            phone_format_notes: document.getElementById('qPhoneFormats').value || null,
+            abuse_reaction: document.getElementById('qAbuseReaction').value || null,
+            unknown_answer_reaction: document.getElementById('qUnknownReaction').value || null
+          };
           const body = {
             display_name: document.getElementById('profileDisplayName').value.trim() || null,
             contact: document.getElementById('profileContact').value.trim() || null,
-            system_prompt: document.getElementById('profileSystemPrompt').value
+            system_prompt: document.getElementById('profileSystemPrompt').value,
+            prompt_survey: survey
           };
           const res = await fetch(base + '/' + tenantId + '/me/profile', {
             method: 'PATCH',

@@ -231,6 +231,7 @@ async def upsert_profile(
     user_id: str,
     display_name: str | None = None,
     contact: str | None = None,
+    prompt_survey: dict | None = None,
 ) -> UserProfile:
     profile = await get_profile(db, tenant_id, user_id)
     if profile is None:
@@ -241,5 +242,7 @@ async def upsert_profile(
         profile.display_name = display_name
     if contact is not None:
         profile.contact = contact
+    if prompt_survey is not None:
+        profile.prompt_survey = prompt_survey
     await db.flush()
     return profile

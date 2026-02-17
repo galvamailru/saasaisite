@@ -281,12 +281,19 @@ async def get_user_profile(
     profile = await get_profile(db, tenant_id, user_id)
     system_prompt = tenant.system_prompt if getattr(tenant, "system_prompt", None) else None
     if not profile:
-        return ProfileResponse(user_id=user_id, display_name=None, contact=None, system_prompt=system_prompt)
+        return ProfileResponse(
+            user_id=user_id,
+            display_name=None,
+            contact=None,
+            system_prompt=system_prompt,
+            prompt_survey=None,
+        )
     return ProfileResponse(
         user_id=profile.user_id,
         display_name=profile.display_name,
         contact=profile.contact,
         system_prompt=system_prompt,
+        prompt_survey=profile.prompt_survey or None,
     )
 
 
@@ -304,6 +311,7 @@ async def update_user_profile(
         db, tenant_id, user_id,
         display_name=body.display_name,
         contact=body.contact,
+        prompt_survey=body.prompt_survey.model_dump() if body.prompt_survey is not None else None,
     )
     # Обновление системного промпта пользовательского бота для этого тенанта
     if body.system_prompt is not None:
@@ -314,6 +322,7 @@ async def update_user_profile(
         display_name=profile.display_name,
         contact=profile.contact,
         system_prompt=tenant.system_prompt,
+        prompt_survey=profile.prompt_survey or None,
     )
 
 

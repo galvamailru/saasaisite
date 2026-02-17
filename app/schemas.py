@@ -87,13 +87,54 @@ class SavedItemResponse(BaseModel):
         from_attributes = True
 
 
-# Cabinet: profile
+# Cabinet: profile + анкета для коммерческого промпта
+class PromptSurvey(BaseModel):
+    # Блок 1. Роль и глобальная цель
+    company_and_agent_name: str | None = None
+    main_problem: str | None = None
+    main_goal: str | None = None
+    tone_of_voice: str | None = None
+
+    # Блок 2. Воронка диалога и первый контакт
+    greeting: str | None = None
+    generic_question_answer: str | None = None
+    return_to_dialog_phrase: str | None = None
+
+    # Блок 3. Продукты / триггеры (упрощённо, в текстовом виде)
+    product1: str | None = None
+    product1_triggers: str | None = None
+    product1_reaction: str | None = None
+    product1_qualifying_question: str | None = None
+
+    product2: str | None = None
+    product2_triggers: str | None = None
+    product2_reaction: str | None = None
+    product2_qualifying_question: str | None = None
+
+    product3: str | None = None
+    product3_triggers: str | None = None
+    product3_reaction: str | None = None
+    product3_qualifying_question: str | None = None
+
+    # Блок 4. Квалификация и переход к действию
+    hot_lead_markers: str | None = None
+    transition_phrases: str | None = None
+    contacts_to_collect: str | None = None
+    phone_format_notes: str | None = None
+
+    # Блок 5. Нештатные ситуации
+    abuse_reaction: str | None = None
+    unknown_answer_reaction: str | None = None
+
+
 class ProfileResponse(BaseModel):
     user_id: str
     display_name: str | None = None
     contact: str | None = None
     # Системный промпт пользовательского бота для этого тенанта (основной, поверх него идут чанки).
     system_prompt: str | None = None
+    # Ответы на анкету для построения коммерческого промпта.
+    prompt_survey: PromptSurvey | None = None
 
     class Config:
         from_attributes = True
@@ -103,6 +144,7 @@ class ProfileUpdate(BaseModel):
     display_name: str | None = Field(None, max_length=256)
     contact: str | None = Field(None, max_length=256)
     system_prompt: str | None = Field(None, max_length=20000)
+    prompt_survey: PromptSurvey | None = None
 
 
 # Cabinet: prompt chunks (max 2000 chars content; optional question from admin bot)
