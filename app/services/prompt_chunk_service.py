@@ -39,7 +39,10 @@ async def create_chunk(
     q = (question or "").strip()[:1000] or None
     if position is None:
         r = await db.execute(
-            select(PromptChunk).where(PromptChunk.tenant_id == tenant_id).order_by(PromptChunk.position.desc())
+            select(PromptChunk)
+            .where(PromptChunk.tenant_id == tenant_id)
+            .order_by(PromptChunk.position.desc())
+            .limit(1)
         )
         last = r.scalar_one_or_none()
         position = (last.position + 1) if last is not None else 0

@@ -52,6 +52,7 @@ async def create_admin_chunk(
             select(AdminPromptChunk)
             .where(AdminPromptChunk.tenant_id == tenant_id)
             .order_by(AdminPromptChunk.position.desc())
+            .limit(1)
         )
         last = r.scalar_one_or_none()
         position = (last.position + 1) if last is not None else 0

@@ -4,82 +4,136 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Кабинет</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; }
-    nav { margin-bottom: 1rem; }
-    nav a { margin-right: 1rem; }
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --border: #2d3a4d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #388bfd;
+      --success: #3fb950;
+      --danger: #f85149;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--text); padding: 0; min-height: 100vh; }
+    body::before { content: ''; position: fixed; inset: 0; background: linear-gradient(180deg, rgba(88,166,255,0.03) 0%, transparent 50%); pointer-events: none; z-index: 0; }
+    #content { position: relative; z-index: 1; padding: 1.25rem 1.5rem; max-width: 960px; margin: 0 auto; }
+    nav {
+      background: var(--surface); border-bottom: 1px solid var(--border); padding: 0.75rem 1.5rem; margin-bottom: 0;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+    }
+    nav a {
+      color: var(--text-muted); text-decoration: none; font-size: 0.9rem; padding: 0.5rem 0.75rem; border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    nav a:hover { color: var(--accent); background: rgba(88,166,255,0.08); }
+    #authLinks { margin-left: auto; }
+    #authLinks a { color: var(--text-muted); }
     .list { list-style: none; padding: 0; }
-    .list li { padding: 0.5rem; border-bottom: 1px solid #eee; }
-    .list li a { text-decoration: none; color: inherit; }
-    .error { color: #c00; }
-    .hint { font-size: 0.9rem; color: #555; margin-bottom: 0.75rem; }
-    .hint a { color: #00acc1; }
-    .chunk-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; background: #fafafa; }
-    .chunk-question-label { font-size: 0.8rem; color: #00acc1; font-weight: 600; margin-bottom: 0.25rem; }
-    .chunk-card .chunk-question-input { width: 100%; font-size: 0.85rem; padding: 0.4rem 0.5rem; border: 1px solid #b2ebf2; border-radius: 4px; margin-bottom: 0.5rem; }
-    .chunk-card textarea { width: 100%; min-height: 80px; font-size: 0.9rem; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
-    .chunk-meta { font-size: 0.85rem; color: #666; margin-bottom: 0.5rem; }
-    .chunk-actions { margin-top: 0.5rem; }
-    .chunk-actions button { margin-right: 0.5rem; padding: 0.4rem 0.8rem; border-radius: 6px; border: none; background: #00acc1; color: #fff; cursor: pointer; font-size: 0.9rem; }
-    .chunk-actions button:hover { background: #0097a7; }
-    .chunk-actions button.delete { background: #c62828; }
-    .chunk-actions button.delete:hover { background: #b71c1c; }
-    .add-chunk-box { margin-top: 1rem; padding: 1rem; border: 1px dashed #00acc1; border-radius: 8px; background: #f0f9fa; }
-    .add-chunk-box textarea { width: 100%; min-height: 100px; max-height: 200px; font-size: 0.9rem; padding: 0.5rem; border: 1px solid #00acc1; border-radius: 4px; resize: vertical; }
-    .add-chunk-box .counter { font-size: 0.85rem; color: #666; }
-    .embed-code { font-family: monospace; font-size: 0.85rem; background: #263238; color: #aed581; padding: 1rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+    .list li { padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+    .list li a { text-decoration: none; color: var(--accent); }
+    .list li a:hover { text-decoration: underline; }
+    .error { color: var(--danger); }
+    .hint { font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+    .hint a { color: var(--accent); }
+    .hint code { font-family: var(--font-mono); font-size: 0.8em; background: var(--surface); padding: 0.15rem 0.4rem; border-radius: 4px; }
+    h2 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.75rem; color: var(--text); }
+    h3 { font-size: 1.05rem; color: var(--text-muted); margin: 1rem 0 0.5rem; }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+    .chunk-card, .dialog-card, .leads-list .lead-item { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; margin-bottom: 0.75rem; }
+    .chunk-question-label { font-size: 0.75rem; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.35rem; font-family: var(--font-mono); }
+    .chunk-card .chunk-question-input, .chunk-card textarea, .admin-prompt-system textarea {
+      width: 100%; font-size: 0.9rem; padding: 0.5rem 0.65rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text); resize: vertical;
+    }
+    .chunk-card .chunk-question-input:focus, .chunk-card textarea:focus, .admin-prompt-system textarea:focus {
+      outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,166,255,0.2);
+    }
+    .chunk-meta { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; font-family: var(--font-mono); }
+    .chunk-actions { margin-top: 0.6rem; }
+    .chunk-actions button, .embed-actions button, .date-filter button {
+      margin-right: 0.5rem; padding: 0.45rem 0.9rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface);
+      color: var(--text); cursor: pointer; font-size: 0.875rem; transition: background 0.15s, border-color 0.15s;
+    }
+    .chunk-actions button:hover, .embed-actions button:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .add-chunk-box { margin-top: 1rem; padding: 1.25rem; border: 1px dashed var(--border); border-radius: 8px; background: rgba(88,166,255,0.04); }
+    .add-chunk-box textarea, .add-chunk-box input[type="text"] { background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+    .add-chunk-box .counter { font-size: 0.8rem; color: var(--text-muted); font-family: var(--font-mono); }
+    .embed-code { font-family: var(--font-mono); font-size: 0.8rem; background: #0d1117; color: #7ee787; padding: 1rem; border-radius: 6px; border: 1px solid var(--border); overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
     .embed-actions { margin-top: 0.75rem; }
-    .embed-actions button { padding: 0.5rem 1rem; border-radius: 6px; border: none; background: #2e7d32; color: #fff; cursor: pointer; }
-    .embed-actions button:hover { background: #1b5e20; }
+    .embed-actions button { background: var(--success); border-color: var(--success); color: #fff; }
+    .embed-actions button:hover { filter: brightness(1.1); }
     .main-page-wrap { display: flex; gap: 1.5rem; align-items: stretch; margin-top: 0.75rem; flex-wrap: wrap; }
     .main-page-chat { flex: 1 1 360px; min-width: 280px; }
-    .main-page-chat .chat-frame { width: 100%; height: 520px; min-height: 400px; border: 1px solid #ddd; border-radius: 12px; display: block; }
+    .main-page-chat .chat-frame { width: 100%; height: 520px; min-height: 400px; border: 1px solid var(--border); border-radius: 8px; display: block; background: var(--surface); }
     .main-page-embed { flex: 1 1 360px; min-width: 280px; max-width: 520px; }
-    .main-page-embed .embed-section { margin-top: 0; }
     .main-page-embed .embed-code { max-height: 280px; overflow-y: auto; }
     @media (max-width: 720px) { .main-page-wrap { flex-direction: column; } .main-page-embed { max-width: none; } }
-    .admin-chat-toggler { position: fixed; bottom: 24px; right: 24px; z-index: 1000; padding: 12px 20px; border: none; border-radius: 24px; background: #00acc1; color: #fff; font-size: 0.95rem; font-weight: 600; cursor: pointer; box-shadow: 0 4px 16px rgba(0,172,193,0.4); }
-    .admin-chat-toggler:hover { background: #0097a7; }
-    .admin-chat-popup { position: fixed; right: 24px; bottom: 72px; width: 400px; max-width: calc(100vw - 48px); max-height: 70vh; z-index: 1001; background: #fff; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.15); display: none; flex-direction: column; overflow: hidden; }
+    .admin-chat-toggler {
+      position: fixed; bottom: 24px; right: 24px; z-index: 1000; padding: 10px 18px; border: 1px solid var(--accent); border-radius: 8px;
+      background: rgba(88,166,255,0.12); color: var(--accent); font-size: 0.9rem; font-weight: 600; cursor: pointer;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3); transition: background 0.2s, box-shadow 0.2s;
+    }
+    .admin-chat-toggler:hover { background: var(--accent); color: #fff; box-shadow: 0 4px 20px rgba(88,166,255,0.35); }
+    .admin-chat-popup {
+      position: fixed; right: 24px; bottom: 72px; width: 400px; max-width: calc(100vw - 48px); max-height: 70vh; z-index: 1001;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      display: none; flex-direction: column; overflow: hidden;
+    }
     body.show-admin-chat .admin-chat-popup { display: flex; }
-    .admin-chat-popup-header { padding: 12px 16px; background: #00acc1; color: #fff; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
-    .admin-chat-popup-header .close-btn { background: none; border: none; color: #fff; font-size: 1.4rem; cursor: pointer; line-height: 1; padding: 0 4px; }
-    .admin-chat-popup .chat-log { flex: 1; min-height: 200px; max-height: 360px; }
-    .admin-chat-popup .chat-input { margin: 0; padding: 8px; border-top: 1px solid #eee; }
-    .chat-log { max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 0.5rem; margin-bottom: 0.5rem; background: #fafafa; }
-    .chat-msg { margin: 0.5rem 0; }
-    .chat-msg.user { color: #06c; }
-    .chat-msg.assistant { color: #363; }
+    .admin-chat-popup-header { padding: 10px 14px; background: var(--bg); border-bottom: 1px solid var(--border); color: var(--text); font-weight: 600; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
+    .admin-chat-popup-header .close-btn { background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; line-height: 1; padding: 0 4px; }
+    .admin-chat-popup-header .close-btn:hover { color: var(--text); }
+    .admin-chat-popup .chat-log { flex: 1; min-height: 200px; max-height: 360px; background: var(--bg); padding: 0.75rem; overflow-y: auto; }
+    .admin-chat-popup .chat-input { margin: 0; padding: 8px; border-top: 1px solid var(--border); background: var(--surface); }
+    .admin-chat-popup .chat-input textarea { background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+    .chat-log { max-height: 400px; overflow-y: auto; border: 1px solid var(--border); padding: 0.75rem; margin-bottom: 0.5rem; background: var(--bg); border-radius: 6px; }
+    .chat-msg { margin: 0.5rem 0; font-size: 0.9rem; }
+    .chat-msg.user { color: var(--accent); }
+    .chat-msg.assistant { color: var(--text-muted); }
     .chat-input { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
     .chat-input textarea { flex: 1; min-height: 60px; resize: vertical; }
-    .date-filter { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.25rem; padding: 1rem; background: #f5f5f5; border-radius: 10px; }
-    .date-filter label { font-size: 0.9rem; color: #555; }
-    .date-filter input[type="date"] { padding: 0.5rem 0.75rem; border: 1px solid #ccc; border-radius: 8px; font-size: 0.95rem; }
-    .date-filter button { padding: 0.5rem 1.25rem; border: none; border-radius: 8px; background: #00acc1; color: #fff; cursor: pointer; font-size: 0.9rem; }
-    .date-filter button:hover { background: #0097a7; }
-    .date-filter .reset-btn { background: #888; }
-    .date-filter .reset-btn:hover { background: #666; }
+    .date-filter { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.25rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+    .date-filter label { font-size: 0.875rem; color: var(--text-muted); }
+    .date-filter input[type="date"] { padding: 0.5rem 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; color: var(--text); }
+    .date-filter button { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .date-filter button:hover { filter: brightness(1.1); }
     .dialog-cards { display: grid; gap: 0.75rem; }
-    .dialog-card { padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid #e0e0e0; background: #fff; transition: box-shadow 0.2s; cursor: pointer; }
-    .dialog-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    .dialog-card.has-lead { border-left: 4px solid #2e7d32; background: #f1f8e9; }
-    .dialog-card .dialog-meta { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin-bottom: 0.5rem; font-size: 0.85rem; color: #666; }
-    .dialog-card .dialog-meta .date { font-weight: 600; color: #333; }
-    .dialog-card .dialog-meta .msg-count { color: #00acc1; }
-    .dialog-card .dialog-meta .lead-badge { color: #2e7d32; font-weight: 600; }
-    .dialog-card .dialog-meta .user-id { font-weight: normal; color: #666; font-size: 0.8rem; }
-    .dialog-card .dialog-preview { font-size: 0.9rem; color: #555; line-height: 1.4; }
-    .leads-list .lead-item { padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid #e0e0e0; margin-bottom: 0.75rem; background: #fff; }
-    .leads-list .lead-item .contact { font-weight: 600; font-size: 1rem; color: #333; }
-    .leads-list .lead-item .meta { font-size: 0.85rem; color: #666; margin-top: 0.35rem; }
-    .leads-list .lead-item .lead-date { font-weight: 500; color: #00acc1; margin-top: 0.25rem; }
+    .dialog-card { cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+    .dialog-card:hover { border-color: var(--accent); background: rgba(88,166,255,0.06); }
+    .dialog-card.has-lead { border-left: 3px solid var(--success); background: rgba(63,185,80,0.08); }
+    .dialog-card .dialog-meta { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin-bottom: 0.35rem; font-size: 0.8rem; color: var(--text-muted); font-family: var(--font-mono); }
+    .dialog-card .dialog-meta .date { font-weight: 600; color: var(--text); }
+    .dialog-card .dialog-meta .msg-count { color: var(--accent); }
+    .dialog-card .dialog-meta .lead-badge { color: var(--success); font-weight: 600; }
+    .dialog-card .dialog-meta .user-id { font-weight: normal; color: var(--text-muted); font-size: 0.8rem; }
+    .leads-list .lead-item { border-radius: 6px; }
+    .leads-list .lead-item .contact { font-weight: 600; font-size: 1rem; color: var(--text); }
+    .leads-list .lead-item .meta { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem; }
+    .leads-list .lead-item .lead-date { font-weight: 500; color: var(--accent); margin-top: 0.25rem; font-family: var(--font-mono); }
     .admin-prompt-system { margin-bottom: 1.5rem; }
-    .admin-prompt-system label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: #333; }
-    .admin-prompt-system textarea { width: 100%; min-height: 200px; font-size: 0.9rem; padding: 0.75rem; border: 1px solid #ccc; border-radius: 8px; resize: vertical; }
-    .admin-chunk-card { border: 1px solid #b2ebf2; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; background: #f0f9fa; }
+    .admin-prompt-system label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: var(--text); font-size: 0.9rem; }
+    .admin-prompt-system textarea { min-height: 200px; }
+    .admin-chunk-card { border: 1px solid var(--border); background: rgba(88,166,255,0.04); }
     .admin-chunk-card .chunk-question-input { margin-bottom: 0.5rem; }
     .admin-chunk-card textarea { min-height: 100px; }
+    /* Глобальные формы */
+    #content input:not([type="date"]):not([type="checkbox"]), #content textarea, #content select {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 0.5rem 0.65rem;
+    }
+    #content button:not(.close-btn) { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 0.45rem 0.9rem; cursor: pointer; font-size: 0.875rem; }
+    #content button:not(.close-btn):hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+    #content .date-filter button:not(.reset-btn), #content .chunk-actions button:not(.delete), #content .embed-actions button { background: var(--accent); border-color: var(--accent); color: #fff; }
+    #content .chunk-actions button.delete { border-color: rgba(248,81,73,0.5); color: var(--danger); }
+    #content .chunk-actions button.delete:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+    #content .date-filter .reset-btn { background: var(--surface); color: var(--text-muted); }
+    #content .date-filter .reset-btn:hover { background: var(--border); color: var(--text); }
   </style>
 </head>
 <body>
