@@ -137,6 +137,38 @@
     #content .chunk-actions button.delete:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
     #content .date-filter .reset-btn { background: var(--surface); color: var(--text-muted); }
     #content .date-filter .reset-btn:hover { background: var(--border); color: var(--text); }
+    /* Галерея и RAG */
+    .content-loading { color: var(--text-muted); padding: 2rem; text-align: center; }
+    .page-gallery .gallery-create-panel, .page-rag .rag-upload-panel { margin-bottom: 1.5rem; }
+    .page-gallery .gallery-create-panel h3, .page-rag .rag-upload-panel h3 { margin-top: 0; }
+    .page-gallery .gallery-create-panel input, .page-gallery .gallery-create-panel textarea,
+    .page-rag .rag-upload-panel input { display: block; width: 100%; margin-bottom: 0.5rem; }
+    .page-rag .rag-upload-panel input[type="file"] { margin-bottom: 0.5rem; }
+    .gallery-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+    .gallery-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+    .gallery-card:hover { border-color: var(--accent); }
+    .gallery-card-thumb { width: 100%; aspect-ratio: 16/10; background: var(--bg); border-radius: 6px; object-fit: cover; }
+    .gallery-card-thumb.empty { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 0.8rem; }
+    .gallery-card-title { font-weight: 600; color: var(--text); }
+    .gallery-card-meta { font-size: 0.8rem; color: var(--text-muted); font-family: var(--font-mono); }
+    .gallery-card-desc { font-size: 0.875rem; color: var(--text-muted); line-height: 1.4; margin: 0; }
+    .gallery-card-actions { display: flex; gap: 0.5rem; margin-top: auto; }
+    .gallery-detail-back { margin-bottom: 1rem; }
+    .gallery-detail-back a { color: var(--accent); text-decoration: none; }
+    .gallery-detail-back a:hover { text-decoration: underline; }
+    .gallery-images-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; }
+    .gallery-image-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; position: relative; }
+    .gallery-image-item img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+    .gallery-image-item .img-url { font-size: 0.75rem; color: var(--text-muted); padding: 0.35rem 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gallery-image-item .img-remove { position: absolute; top: 4px; right: 4px; padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+    .rag-doc-list { list-style: none; padding: 0; margin: 0; }
+    .rag-doc-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.5rem; }
+    .rag-doc-item:hover { border-color: var(--border); }
+    .rag-doc-info { flex: 1; min-width: 0; }
+    .rag-doc-name { font-weight: 600; color: var(--text); }
+    .rag-doc-meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; font-family: var(--font-mono); }
+    .rag-doc-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+    #content input[type="file"] { font-size: 0.875rem; color: var(--text-muted); }
   </style>
 </head>
 <body>
@@ -643,23 +675,29 @@
       async function loadGallery() {
         if (!requireAuth()) return;
         await ensureTenant();
-        let html = '<h2>Галерея</h2><p class="hint">Группы изображений для показа в чате (команды LIST_GALLERIES, SHOW_GALLERY).</p>';
+        document.getElementById('content').innerHTML = '<div class="page-gallery"><h2>Галерея</h2><p class="hint">Группы изображений для показа в чате (команды LIST_GALLERIES, SHOW_GALLERY).</p><p class="content-loading">Загрузка…</p></div>';
         const r = await fetch(base + '/' + tenantId + '/me/gallery/groups', { headers: headers() });
+        let html = '<div class="page-gallery"><h2>Галерея</h2><p class="hint">Группы изображений для показа в чате (команды LIST_GALLERIES, SHOW_GALLERY).</p>';
         if (!r.ok) {
-          document.getElementById('content').innerHTML = html + '<p class="error">Ошибка загрузки. Убедитесь, что микросервис галереи запущен.</p>';
+          document.getElementById('content').innerHTML = html + '<p class="error">Ошибка загрузки. Убедитесь, что микросервис галереи запущен.</p></div>';
           return;
         }
         const groups = await r.json();
-        html += '<div class="panel" style="margin-bottom:1rem;"><h3>Создать группу</h3><input type="text" id="galleryGroupName" placeholder="Название" style="width:100%;margin-bottom:0.5rem;"><textarea id="galleryGroupDesc" placeholder="Описание (необязательно)" style="width:100%;min-height:60px;margin-bottom:0.5rem;"></textarea><button type="button" id="galleryCreateGroupBtn">Создать</button></div>';
-        if (groups.length === 0) html += '<p>Нет групп. Создайте группу и добавьте в неё изображения (URL).</p>';
-        else {
-          html += '<div class="dialog-cards">';
+        html += '<div class="panel gallery-create-panel"><h3>Создать группу</h3><input type="text" id="galleryGroupName" placeholder="Название группы" maxlength="256"><textarea id="galleryGroupDesc" placeholder="Описание (необязательно)" rows="2"></textarea><button type="button" id="galleryCreateGroupBtn">Создать группу</button></div>';
+        if (groups.length === 0) {
+          html += '<p class="hint">Нет групп. Создайте группу и добавьте в неё изображения по URL.</p>';
+        } else {
+          html += '<div class="gallery-cards">';
           for (const g of groups) {
-            html += '<div class="dialog-card" data-group-id="' + g.id + '"><div class="dialog-meta"><span class="date">' + escapeHtml(g.name) + '</span><span class="msg-count">' + (g.image_count || 0) + ' фото</span></div><p class="dialog-preview">' + escapeHtml((g.description || '').slice(0, 100)) + '</p><button type="button" class="gallery-view-group" data-group-id="' + g.id + '">Открыть</button> <button type="button" class="delete gallery-delete-group" data-group-id="' + g.id + '">Удалить</button></div>';
+            html += '<div class="gallery-card" data-group-id="' + g.id + '">';
+            html += '<div class="gallery-card-title">' + escapeHtml(g.name) + '</div>';
+            html += '<div class="gallery-card-meta">' + (g.image_count || 0) + ' фото</div>';
+            if (g.description) html += '<p class="gallery-card-desc">' + escapeHtml((g.description || '').slice(0, 120)) + (g.description.length > 120 ? '…' : '') + '</p>';
+            html += '<div class="gallery-card-actions"><button type="button" class="gallery-view-group" data-group-id="' + g.id + '">Открыть</button><button type="button" class="delete gallery-delete-group" data-group-id="' + g.id + '">Удалить</button></div></div>';
           }
           html += '</div>';
         }
-        document.getElementById('content').innerHTML = html;
+        document.getElementById('content').innerHTML = html + '</div>';
         document.getElementById('galleryCreateGroupBtn')?.addEventListener('click', async function() {
           const name = document.getElementById('galleryGroupName').value.trim();
           if (!name) { alert('Введите название'); return; }
@@ -683,17 +721,25 @@
       async function loadGalleryGroup(groupId) {
         if (!requireAuth()) return;
         await ensureTenant();
+        document.getElementById('content').innerHTML = '<div class="content-loading">Загрузка группы…</div>';
         const r = await fetch(base + '/' + tenantId + '/me/gallery/groups/' + groupId, { headers: headers() });
         if (!r.ok) { document.getElementById('content').innerHTML = '<p class="error">Группа не найдена</p>'; return; }
         const g = await r.json();
-        let html = '<h2>' + escapeHtml(g.name) + '</h2><p><a href="#" data-goto="gallery">← К списку галерей</a></p><p class="hint">' + escapeHtml(g.description || '') + '</p>';
-        html += '<div class="panel"><h3>Добавить изображение (URL)</h3><input type="text" id="galleryImageUrl" placeholder="https://..." style="width:100%;margin-bottom:0.5rem;"><button type="button" id="galleryAddImageBtn">Добавить</button></div>';
-        html += '<div class="dialog-cards">';
-        for (const img of g.images || []) {
-          html += '<div class="dialog-card"><img src="' + escapeHtml(img.url) + '" alt="" style="max-width:120px;max-height:80px;object-fit:cover;"><span>' + escapeHtml(img.url).slice(0, 40) + '…</span> <button type="button" class="delete gallery-delete-image" data-image-id="' + img.id + '">Удалить</button></div>';
+        let html = '<div class="page-gallery"><div class="gallery-detail-back"><a href="#" data-goto="gallery">← К списку галерей</a></div>';
+        html += '<h2>' + escapeHtml(g.name) + '</h2>';
+        if (g.description) html += '<p class="hint">' + escapeHtml(g.description) + '</p>';
+        html += '<div class="panel gallery-create-panel"><h3>Добавить изображение по URL</h3><input type="text" id="galleryImageUrl" placeholder="https://example.com/image.jpg"><button type="button" id="galleryAddImageBtn">Добавить</button></div>';
+        html += '<h3>Изображения</h3>';
+        if (!g.images || g.images.length === 0) {
+          html += '<p class="hint">В группе пока нет изображений. Добавьте URL выше.</p>';
+        } else {
+          html += '<div class="gallery-images-grid">';
+          for (const img of g.images) {
+            html += '<div class="gallery-image-item"><img src="' + escapeHtml(img.url) + '" alt="" onerror="this.style.background=\'var(--bg)\';this.style.minHeight=\'120px\'"><span class="img-url" title="' + escapeHtml(img.url) + '">' + escapeHtml(img.url.length > 40 ? img.url.slice(0, 40) + '…' : img.url) + '</span><button type="button" class="delete gallery-delete-image img-remove" data-image-id="' + img.id + '">Удалить</button></div>';
+          }
+          html += '</div>';
         }
-        html += '</div>';
-        document.getElementById('content').innerHTML = html;
+        document.getElementById('content').innerHTML = html + '</div>';
         document.querySelector('[data-goto="gallery"]')?.addEventListener('click', function(e) { e.preventDefault(); window.history.pushState({}, '', '/' + tenantSlug + '/my/gallery'); route(); });
         document.getElementById('galleryAddImageBtn')?.addEventListener('click', async function() {
           const url = document.getElementById('galleryImageUrl').value.trim();
@@ -715,23 +761,27 @@
       async function loadRag() {
         if (!requireAuth()) return;
         await ensureTenant();
-        let html = '<h2>Документы (RAG)</h2><p class="hint">PDF загружаются и распознаются в markdown. В чате доступны команды RAG_LIST_DOCUMENTS, RAG_GET_DOCUMENT, RAG_SEARCH.</p>';
+        document.getElementById('content').innerHTML = '<div class="page-rag"><h2>Документы (RAG)</h2><p class="hint">PDF загружаются и распознаются в markdown. В чате доступны команды RAG_LIST_DOCUMENTS, RAG_GET_DOCUMENT, RAG_SEARCH.</p><p class="content-loading">Загрузка…</p></div>';
         const r = await fetch(base + '/' + tenantId + '/me/rag/documents', { headers: headers() });
+        let html = '<div class="page-rag"><h2>Документы (RAG)</h2><p class="hint">PDF загружаются и распознаются в markdown. В чате бот может искать по документам и выдавать выдержки.</p>';
         if (!r.ok) {
-          document.getElementById('content').innerHTML = html + '<p class="error">Ошибка загрузки. Убедитесь, что микросервис RAG запущен.</p>';
+          document.getElementById('content').innerHTML = html + '<p class="error">Ошибка загрузки. Убедитесь, что микросервис RAG запущен.</p></div>';
           return;
         }
         const docs = await r.json();
-        html += '<div class="panel" style="margin-bottom:1rem;"><h3>Загрузить PDF</h3><input type="text" id="ragDocName" placeholder="Название документа" style="width:100%;margin-bottom:0.5rem;"><input type="file" id="ragDocFile" accept=".pdf" style="margin-bottom:0.5rem;"><button type="button" id="ragUploadBtn">Загрузить</button></div>';
-        if (docs.length === 0) html += '<p>Нет документов.</p>';
-        else {
-          html += '<ul class="list">';
+        html += '<div class="panel rag-upload-panel"><h3>Загрузить PDF</h3><input type="text" id="ragDocName" placeholder="Название документа (или оставьте пустым — подставится имя файла)"><input type="file" id="ragDocFile" accept=".pdf"><button type="button" id="ragUploadBtn">Загрузить</button></div>';
+        if (docs.length === 0) {
+          html += '<p class="hint">Нет документов. Загрузите PDF — он будет распознан и сохранён в виде текста (markdown).</p>';
+        } else {
+          html += '<h3>Список документов</h3><ul class="rag-doc-list">';
           for (const d of docs) {
-            html += '<li class="lead-item"><span class="contact">' + escapeHtml(d.name) + '</span><span class="lead-date">' + formatDate(d.created_at) + '</span> <button type="button" class="delete rag-delete-doc" data-doc-id="' + d.id + '">Удалить</button></li>';
+            var meta = formatDate(d.created_at);
+            if (d.source_file_name) meta += ' · ' + escapeHtml(d.source_file_name);
+            html += '<li class="rag-doc-item"><div class="rag-doc-info"><div class="rag-doc-name">' + escapeHtml(d.name) + '</div><div class="rag-doc-meta">' + meta + '</div></div><div class="rag-doc-actions"><button type="button" class="delete rag-delete-doc" data-doc-id="' + d.id + '">Удалить</button></div></li>';
           }
           html += '</ul>';
         }
-        document.getElementById('content').innerHTML = html;
+        document.getElementById('content').innerHTML = html + '</div>';
         document.getElementById('ragUploadBtn')?.addEventListener('click', async function() {
           const name = document.getElementById('ragDocName').value.trim() || document.getElementById('ragDocFile').files?.[0]?.name?.replace(/\.pdf$/i, '') || 'document';
           const fileInput = document.getElementById('ragDocFile');
