@@ -778,7 +778,7 @@
           fd.append('file', file);
           const xhr = new XMLHttpRequest();
           xhr.open('POST', base + '/' + tenantId + '/me/gallery/groups/' + groupId + '/images');
-          xhr.setRequestHeader('Authorization', 'Bearer ' + (localStorage.getItem('token') || ''));
+          xhr.setRequestHeader('Authorization', 'Bearer ' + (localStorage.getItem('cip_access_token') || ''));
           xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) { var pct = Math.round((e.loaded / e.total) * 100); barEl.style.width = pct + '%'; textEl.textContent = 'Загрузка ' + pct + '%'; }
           });

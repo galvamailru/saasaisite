@@ -62,7 +62,7 @@ async def search_documents(
     return [DocumentListItem.model_validate(d) for d in r.scalars().all()]
 
 
-def _convert_pdf_to_markdown(file: UploadFile) -> str:
+async def _convert_pdf_to_markdown(file: UploadFile) -> str:
     """Сохраняет PDF во временный файл, конвертирует в markdown, возвращает текст."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
@@ -91,7 +91,7 @@ async def preview_document(
     file: UploadFile = File(...),
 ):
     """Преобразует PDF в markdown и возвращает текст без сохранения в БД."""
-    md = _convert_pdf_to_markdown(file)
+    md = await _convert_pdf_to_markdown(file)
     suggested_name = (Path(file.filename or "document").stem or "document").strip()[:512]
     return {"markdown": md, "suggested_name": suggested_name}
 
@@ -103,7 +103,7 @@ async def create_document(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
-    md = _convert_pdf_to_markdown(file)
+    md = await _convert_pdf_to_markdown(file)
     doc = Document(
         tenant_id=tenant_id,
         name=name.strip(),
