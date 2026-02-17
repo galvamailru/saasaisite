@@ -43,6 +43,10 @@ async def gallery_get_file(path: str) -> tuple[int, bytes, str | None]:
         return r.status_code, r.content, ct
 
 
+# Таймаут для RAG: конвертация PDF (docling) может занимать несколько минут на больших файлах
+RAG_TIMEOUT = httpx.Timeout(60.0, read=600.0)  # connect 60s, read 10 min
+
+
 async def rag_request(
     method: str,
     path: str,
@@ -53,7 +57,7 @@ async def rag_request(
     """Вызов API RAG. Возвращает (status_code, text)."""
     base = settings.rag_service_url.rstrip("/")
     url = f"{base}{path}"
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=RAG_TIMEOUT) as client:
         if method == "GET":
             r = await client.get(url, params=params)
         elif method == "POST":

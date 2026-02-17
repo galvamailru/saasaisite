@@ -95,6 +95,16 @@
       text-decoration: none;
     }
     .msg.assistant a:hover { text-decoration: underline; }
+    .msg.assistant .chat-gallery-img {
+      display: block;
+      max-width: 100%;
+      max-height: 280px;
+      width: auto;
+      height: auto;
+      border-radius: 12px;
+      margin: 0.5rem 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
     .content-strip {
       padding: 0.75rem 1.25rem;
       border-top: 1px solid #eee;
@@ -267,6 +277,11 @@
         return div.innerHTML;
       }
 
+      function isGalleryImageUrl(line) {
+        const t = (line || '').trim();
+        return /^https?:\/\/[^\s]+$/i.test(t) && t.indexOf('/me/gallery/groups/') !== -1 && t.indexOf('/images/') !== -1 && t.indexOf('/file') !== -1;
+      }
+
       function linkifyAndStripFiles(text) {
         const fileRegex = /\[Файл:\s*([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
         const files = [];
@@ -274,10 +289,20 @@
           files.push({ name: name.trim(), url });
           return '';
         }).trim().replace(/\n{2,}/g, '\n\n');
-        let html = escapeHtml(cleaned).replace(/\n/g, '<br>');
-        const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
-        html = html.replace(linkRegex, (_, t, u) => '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>');
-        return { html, files };
+        const lines = cleaned.split('\n');
+        const parts = [];
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (isGalleryImageUrl(line)) {
+            parts.push('<img src="' + escapeHtml(line.trim()) + '" alt="" class="chat-gallery-img" loading="lazy">');
+          } else {
+            const escaped = escapeHtml(line);
+            const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+            parts.push(escaped.replace(linkRegex, (_, t, u) => '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'));
+          }
+        }
+        let html = parts.join('<br>');
+        return { html: html || '—', files };
       }
 
       function addMsg(role, text, opts) {
