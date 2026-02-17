@@ -6,16 +6,42 @@ services:
     env_file: .env
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cip}:${POSTGRES_PASSWORD:-cip}@db:5432/${POSTGRES_DB:-cip}
+      - GALLERY_SERVICE_URL=http://gallery:8010
+      - RAG_SERVICE_URL=http://rag:8020
       - SMTP_HOST=mailpit
       - SMTP_PORT=1025
     depends_on:
       db:
         condition: service_healthy
+      gallery:
+        condition: service_started
+      rag:
+        condition: service_started
       mailpit:
         condition: service_started
     volumes:
       - .:/app
       - ./prompts:/app/prompts:ro
+
+  gallery:
+    build: ./services/gallery
+    ports:
+      - "8010:8010"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cip}:${POSTGRES_PASSWORD:-cip}@db:5432/${POSTGRES_DB:-cip}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  rag:
+    build: ./services/rag
+    ports:
+      - "8020:8020"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-cip}:${POSTGRES_PASSWORD:-cip}@db:5432/${POSTGRES_DB:-cip}
+    depends_on:
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:15-alpine
