@@ -906,8 +906,38 @@
           return;
         }
         const p = await r.json();
-        document.getElementById('content').innerHTML =
-          '<h2>Профиль</h2><p>user_id: ' + (p.user_id || '') + '</p><p>Имя: ' + (p.display_name || '—') + '</p><p>Контакт: ' + (p.contact || '—') + '</p>';
+        const sysEsc = (p.system_prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        let html = '<h2>Профиль</h2>';
+        html += '<p class="hint">Здесь вы можете задать базовый системный промпт клиентского бота (основные инструкции). Дополнительные детали можно добавлять чанками в разделе «Промпт».</p>';
+        html += '<form id="profileForm" class="panel">';
+        html += '<p><strong>user_id:</strong> ' + (p.user_id || '') + '</p>';
+        html += '<label>Имя (отображается в кабинете)<br><input type="text" id="profileDisplayName" value="' + (p.display_name || '') + '" maxlength="256"></label>';
+        html += '<label>Контакт (email/телефон/мессенджер)<br><input type="text" id="profileContact" value="' + (p.contact || '') + '" maxlength="256"></label>';
+        html += '<label>Системный промпт клиентского бота<br><textarea id="profileSystemPrompt" rows="12" spellcheck="false" placeholder="Опишите здесь роль агента, бизнес-цель и ключевые правила. Можно вписать ответы по анкете: роль и цель, сценарий диалога, продукты и триггеры, как запрашивать контакты, как реагировать на нештатные ситуации.">' + sysEsc + '</textarea></label>';
+        html += '<div style="margin-top:1rem;"><button type="submit">Сохранить профиль</button></div>';
+        html += '</form>';
+        document.getElementById('content').innerHTML = html;
+        const form = document.getElementById('profileForm');
+        form.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          const body = {
+            display_name: document.getElementById('profileDisplayName').value.trim() || null,
+            contact: document.getElementById('profileContact').value.trim() || null,
+            system_prompt: document.getElementById('profileSystemPrompt').value
+          };
+          const res = await fetch(base + '/' + tenantId + '/me/profile', {
+            method: 'PATCH',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, headers(true)),
+            body: JSON.stringify(body)
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            alert(data.detail || 'Ошибка сохранения профиля');
+            return;
+          }
+          alert('Профиль сохранён.');
+          loadProfile();
+        });
       }
 
       async function loadMy() {

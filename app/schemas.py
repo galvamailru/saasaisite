@@ -92,6 +92,8 @@ class ProfileResponse(BaseModel):
     user_id: str
     display_name: str | None = None
     contact: str | None = None
+    # Системный промпт пользовательского бота для этого тенанта (основной, поверх него идут чанки).
+    system_prompt: str | None = None
 
     class Config:
         from_attributes = True
@@ -100,6 +102,7 @@ class ProfileResponse(BaseModel):
 class ProfileUpdate(BaseModel):
     display_name: str | None = Field(None, max_length=256)
     contact: str | None = Field(None, max_length=256)
+    system_prompt: str | None = Field(None, max_length=20000)
 
 
 # Cabinet: prompt chunks (max 2000 chars content; optional question from admin bot)

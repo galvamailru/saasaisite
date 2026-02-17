@@ -279,12 +279,14 @@ async def get_user_profile(
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     profile = await get_profile(db, tenant_id, user_id)
+    system_prompt = tenant.system_prompt if getattr(tenant, "system_prompt", None) else None
     if not profile:
-        return ProfileResponse(user_id=user_id, display_name=None, contact=None)
+        return ProfileResponse(user_id=user_id, display_name=None, contact=None, system_prompt=system_prompt)
     return ProfileResponse(
         user_id=profile.user_id,
         display_name=profile.display_name,
         contact=profile.contact,
+        system_prompt=system_prompt,
     )
 
 
@@ -303,10 +305,15 @@ async def update_user_profile(
         display_name=body.display_name,
         contact=body.contact,
     )
+    # Обновление системного промпта пользовательского бота для этого тенанта
+    if body.system_prompt is not None:
+        tenant.system_prompt = (body.system_prompt or "").strip() or None
+        await db.flush()
     return ProfileResponse(
         user_id=profile.user_id,
         display_name=profile.display_name,
         contact=profile.contact,
+        system_prompt=tenant.system_prompt,
     )
 
 

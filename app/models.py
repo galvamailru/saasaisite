@@ -29,6 +29,9 @@ class Tenant(Base):
     user_profiles = relationship("UserProfile", back_populates="tenant")
     tenant_users = relationship("TenantUser", back_populates="tenant")
     prompt_chunks = relationship("PromptChunk", back_populates="tenant", order_by="PromptChunk.position")
+    # Системный промпт пользовательского бота (основной), поверх него добавляются чанки prompt_chunk.
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Системный промпт админ-бота (кабинет).
     admin_system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     admin_prompt_chunks = relationship(
         "AdminPromptChunk", back_populates="tenant", order_by="AdminPromptChunk.position"
