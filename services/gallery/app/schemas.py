@@ -27,10 +27,6 @@ class GroupResponse(BaseModel):
         from_attributes = True
 
 
-class ImageAdd(BaseModel):
-    url: str = Field(..., max_length=2048)
-
-
 class ImageResponse(BaseModel):
     id: UUID
     group_id: UUID

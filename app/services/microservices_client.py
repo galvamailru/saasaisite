@@ -11,6 +11,7 @@ async def gallery_request(
     path: str,
     tenant_id: UUID,
     json_body: dict | None = None,
+    files: dict | None = None,
 ) -> tuple[int, str]:
     """Вызов API галереи. path без ведущего слэша. Возвращает (status_code, text)."""
     base = settings.gallery_service_url.rstrip("/")
@@ -19,7 +20,10 @@ async def gallery_request(
         if method == "GET":
             r = await client.get(url)
         elif method == "POST":
-            r = await client.post(url, json=json_body or {})
+            if files:
+                r = await client.post(url, files=files)
+            else:
+                r = await client.post(url, json=json_body or {})
         elif method == "PATCH":
             r = await client.patch(url, json=json_body or {})
         elif method == "DELETE":
@@ -27,6 +31,16 @@ async def gallery_request(
         else:
             r = await client.request(method, url, json=json_body)
         return r.status_code, r.text
+
+
+async def gallery_get_file(path: str) -> tuple[int, bytes, str | None]:
+    """GET бинарного файла из галереи. Возвращает (status_code, content, content_type)."""
+    base = settings.gallery_service_url.rstrip("/")
+    url = f"{base}{path}"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.get(url)
+        ct = r.headers.get("content-type")
+        return r.status_code, r.content, ct
 
 
 async def rag_request(

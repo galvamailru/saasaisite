@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -34,7 +34,7 @@ class GalleryGroup(Base):
 
 
 class GalleryImage(Base):
-    """Изображение в группе. url — ссылка на файл (MinIO/S3 или внешний)."""
+    """Изображение в группе. Хранится в БД: data (бинарные данные) и content_type."""
     __tablename__ = "image"
     __table_args__ = {"schema": "gallery"}
 
@@ -47,7 +47,8 @@ class GalleryImage(Base):
         nullable=False,
         index=True,
     )
-    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

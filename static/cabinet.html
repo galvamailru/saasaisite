@@ -685,7 +685,7 @@
         const groups = await r.json();
         html += '<div class="panel gallery-create-panel"><h3>Создать группу</h3><input type="text" id="galleryGroupName" placeholder="Название группы" maxlength="256"><textarea id="galleryGroupDesc" placeholder="Описание (необязательно)" rows="2"></textarea><button type="button" id="galleryCreateGroupBtn">Создать группу</button></div>';
         if (groups.length === 0) {
-          html += '<p class="hint">Нет групп. Создайте группу и добавьте в неё изображения по URL.</p>';
+          html += '<p class="hint">Нет групп. Создайте группу и добавьте в неё изображения (загрузка с компьютера).</p>';
         } else {
           html += '<div class="gallery-cards">';
           for (const g of groups) {
@@ -728,10 +728,10 @@
         let html = '<div class="page-gallery"><div class="gallery-detail-back"><a href="#" data-goto="gallery">← К списку галерей</a></div>';
         html += '<h2>' + escapeHtml(g.name) + '</h2>';
         if (g.description) html += '<p class="hint">' + escapeHtml(g.description) + '</p>';
-        html += '<div class="panel gallery-create-panel"><h3>Добавить изображение по URL</h3><input type="text" id="galleryImageUrl" placeholder="https://example.com/image.jpg"><button type="button" id="galleryAddImageBtn">Добавить</button></div>';
+        html += '<div class="panel gallery-create-panel"><h3>Добавить изображение</h3><input type="file" id="galleryImageFile" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none"><button type="button" id="galleryAddImageBtn">Выбрать файл…</button><span id="galleryUploadStatus" class="hint"></span></div>';
         html += '<h3>Изображения</h3>';
         if (!g.images || g.images.length === 0) {
-          html += '<p class="hint">В группе пока нет изображений. Добавьте URL выше.</p>';
+          html += '<p class="hint">В группе пока нет изображений. Нажмите «Выбрать файл…» и загрузите изображение с компьютера.</p>';
         } else {
           html += '<div class="gallery-images-grid">';
           for (const img of g.images) {
@@ -741,12 +741,26 @@
         }
         document.getElementById('content').innerHTML = html + '</div>';
         document.querySelector('[data-goto="gallery"]')?.addEventListener('click', function(e) { e.preventDefault(); window.history.pushState({}, '', '/' + tenantSlug + '/my/gallery'); route(); });
-        document.getElementById('galleryAddImageBtn')?.addEventListener('click', async function() {
-          const url = document.getElementById('galleryImageUrl').value.trim();
-          if (!url) { alert('Введите URL'); return; }
-          const res = await fetch(base + '/' + tenantId + '/me/gallery/groups/' + groupId + '/images', { method: 'POST', headers: headers(true), body: JSON.stringify({ url: url }) });
-          if (!res.ok) { alert('Ошибка: ' + await res.text()); return; }
-          loadGalleryGroup(groupId);
+        document.getElementById('galleryAddImageBtn')?.addEventListener('click', function() { document.getElementById('galleryImageFile').click(); });
+        document.getElementById('galleryImageFile')?.addEventListener('change', async function() {
+          const input = this;
+          const file = input.files && input.files[0];
+          if (!file) return;
+          const statusEl = document.getElementById('galleryUploadStatus');
+          statusEl.textContent = 'Загрузка…';
+          try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await fetch(base + '/' + tenantId + '/me/gallery/groups/' + groupId + '/images', { method: 'POST', headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }, body: fd });
+            if (!res.ok) { const err = await res.json().catch(function() { return {}; }); statusEl.textContent = ''; alert('Ошибка: ' + (err.detail || res.statusText)); input.value = ''; return; }
+            statusEl.textContent = 'Добавлено.';
+            input.value = '';
+            loadGalleryGroup(groupId);
+          } catch (e) {
+            statusEl.textContent = '';
+            alert('Ошибка: ' + (e && e.message ? e.message : String(e)));
+            input.value = '';
+          }
         });
         document.getElementById('content').querySelectorAll('.gallery-delete-image').forEach(function(btn) {
           btn.addEventListener('click', async function() {

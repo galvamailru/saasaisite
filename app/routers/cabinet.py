@@ -537,7 +537,7 @@ async def get_embed_code(
 
 
 # --- Прокси к микросервисам: Галерея и RAG (редактирование через UI кабинета) ---
-from app.services.microservices_client import gallery_request, rag_request
+from app.services.microservices_client import gallery_get_file, gallery_request, rag_request
 
 
 @router.get("/{tenant_id:uuid}/me/gallery/groups")
@@ -555,12 +555,17 @@ async def gallery_list_groups(
 async def gallery_get_group(
     tenant_id: UUID,
     group_id: UUID,
+    request: Request,
     user_id: str = Depends(get_cabinet_user),
 ):
     status, text = await gallery_request("GET", f"/api/v1/groups/{group_id}", tenant_id)
     if status >= 400:
         return JSONResponse(content={"detail": text}, status_code=status)
-    return JSONResponse(content=json.loads(text))
+    data = json.loads(text)
+    base = str(request.base_url).rstrip("/")
+    for img in data.get("images") or []:
+        img["url"] = f"{base}/api/v1/tenants/{tenant_id}/me/gallery/groups/{group_id}/images/{img['id']}/file"
+    return JSONResponse(content=data)
 
 
 @router.post("/{tenant_id:uuid}/me/gallery/groups")
@@ -605,13 +610,36 @@ async def gallery_delete_group(
 async def gallery_add_image(
     tenant_id: UUID,
     group_id: UUID,
-    body: dict,
+    request: Request,
+    file: UploadFile = File(...),
     user_id: str = Depends(get_cabinet_user),
 ):
-    status, text = await gallery_request("POST", f"/api/v1/groups/{group_id}/images", tenant_id, json_body=body)
+    content = await file.read()
+    files = {"file": (file.filename or "image", content, file.content_type or "application/octet-stream")}
+    status, text = await gallery_request(
+        "POST", f"/api/v1/groups/{group_id}/images", tenant_id, files=files
+    )
     if status >= 400:
         return JSONResponse(content={"detail": text}, status_code=status)
-    return JSONResponse(content=json.loads(text), status_code=201)
+    data = json.loads(text)
+    base = str(request.base_url).rstrip("/")
+    data["url"] = f"{base}/api/v1/tenants/{tenant_id}/me/gallery/groups/{group_id}/images/{data['id']}/file"
+    return JSONResponse(content=data, status_code=201)
+
+
+@router.get("/{tenant_id:uuid}/me/gallery/groups/{group_id:uuid}/images/{image_id:uuid}/file")
+async def gallery_serve_image(
+    tenant_id: UUID,
+    group_id: UUID,
+    image_id: UUID,
+):
+    """Отдаёт бинарный файл изображения из БД галереи. Без авторизации — URL с uuid непредсказуем."""
+    status, content, content_type = await gallery_get_file(
+        f"/api/v1/groups/{group_id}/images/{image_id}/file"
+    )
+    if status != 200:
+        return Response(status_code=status)
+    return Response(content=content, media_type=content_type or "application/octet-stream")
 
 
 @router.delete("/{tenant_id:uuid}/me/gallery/groups/{group_id:uuid}/images/{image_id:uuid}")

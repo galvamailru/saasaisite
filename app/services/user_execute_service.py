@@ -88,7 +88,11 @@ async def run_user_command(tenant_id: UUID, block_content: str) -> str:
             images = data.get("images", [])
             if not images:
                 return f"Галерея «{name}» пуста."
-            urls = [img.get("url", "") for img in images]
+            base = settings.frontend_base_url.rstrip("/")
+            urls = [
+                f"{base}/api/v1/tenants/{tid}/me/gallery/groups/{gid}/images/{img.get('id', '')}/file"
+                for img in images
+            ]
             return f"Галерея «{name}»:\n" + "\n".join(urls)
         except Exception as e:
             return f"Ошибка: {e}"
