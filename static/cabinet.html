@@ -181,6 +181,7 @@
     .rag-preview-modal .rag-preview-footer button { padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
     .rag-preview-modal .rag-preview-footer .btn-cancel { background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); }
     .rag-preview-modal .rag-preview-footer .btn-save { background: var(--success); border: 1px solid var(--success); color: #fff; }
+    .rag-preview-modal .rag-preview-body textarea[readonly] { cursor: default; }
     /* Индикатор прогресса загрузки */
     .upload-progress-wrap { margin-top: 0.75rem; display: none; }
     .upload-progress-wrap.active { display: block; }
@@ -819,7 +820,7 @@
           for (const d of docs) {
             var meta = formatDate(d.created_at);
             if (d.source_file_name) meta += ' · ' + escapeHtml(d.source_file_name);
-            html += '<li class="rag-doc-item"><div class="rag-doc-info"><div class="rag-doc-name">' + escapeHtml(d.name) + '</div><div class="rag-doc-meta">' + meta + '</div></div><div class="rag-doc-actions"><button type="button" class="delete rag-delete-doc" data-doc-id="' + d.id + '">Удалить</button></div></li>';
+            html += '<li class="rag-doc-item"><div class="rag-doc-info"><div class="rag-doc-name">' + escapeHtml(d.name) + '</div><div class="rag-doc-meta">' + meta + '</div></div><div class="rag-doc-actions"><button type="button" class="rag-view-doc" data-doc-id="' + d.id + '">Просмотр</button><button type="button" class="delete rag-delete-doc" data-doc-id="' + d.id + '">Удалить</button></div></li>';
           }
           html += '</ul>';
         }
@@ -869,6 +870,22 @@
           });
           xhr.addEventListener('error', function() { wrap.classList.remove('active'); alert('Ошибка сети'); });
           xhr.send(fd);
+        });
+        document.getElementById('content').querySelectorAll('.rag-view-doc').forEach(function(btn) {
+          btn.addEventListener('click', async function() {
+            const id = btn.getAttribute('data-doc-id');
+            try {
+              const res = await fetch(base + '/' + tenantId + '/me/rag/documents/' + id, { headers: headers() });
+              if (!res.ok) { alert('Ошибка загрузки документа'); return; }
+              const data = await res.json();
+              var modal = document.createElement('div');
+              modal.className = 'rag-preview-overlay';
+              modal.innerHTML = '<div class="rag-preview-modal"><h3>Содержимое: ' + escapeHtml(data.name || 'документ') + '</h3><div class="rag-preview-body"><label>Текст (Markdown)</label><textarea id="ragViewMd" spellcheck="false" readonly>' + escapeHtml(data.content_md || '') + '</textarea></div><div class="rag-preview-footer"><button type="button" class="btn-cancel rag-view-close">Закрыть</button></div></div>';
+              document.body.appendChild(modal);
+              modal.querySelector('.rag-view-close').onclick = function() { modal.remove(); };
+              modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+            } catch (e) { alert('Ошибка: ' + (e.message || String(e))); }
+          });
         });
         document.getElementById('content').querySelectorAll('.rag-delete-doc').forEach(function(btn) {
           btn.addEventListener('click', async function() {

@@ -119,6 +119,24 @@ async def run_user_command(tenant_id: UUID, block_content: str) -> str:
             name = data.get("name", "")
             content = (data.get("content_md") or "")[:8000]
             return f"Документ «{name}»:\n\n{content}"
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                try:
+                    gtext = await _call_gallery(f"/api/v1/groups/{doc_id}")
+                    gdata = json.loads(gtext)
+                    name = gdata.get("name", "")
+                    images = gdata.get("images", [])
+                    if not images:
+                        return f"Галерея «{name}» пуста."
+                    base = settings.frontend_base_url.rstrip("/")
+                    urls = [
+                        f"{base}/api/v1/tenants/{tid}/me/gallery/groups/{doc_id}/images/{img.get('id', '')}/file"
+                        for img in images
+                    ]
+                    return f"Галерея «{name}»:\n" + "\n".join(urls)
+                except Exception:
+                    pass
+            return f"Ошибка: {e}"
         except Exception as e:
             return f"Ошибка: {e}"
 
