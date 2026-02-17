@@ -14,6 +14,8 @@ class RegisterRequest(BaseModel):
 class RegisterResponse(BaseModel):
     message: str = "Письмо с подтверждением отправлено на указанный email."
     user_id: str
+    tenant_id: str | None = None  # при регистрации «один тенант на пользователя»
+    tenant_slug: str | None = None  # ссылка на вход: /{tenant_slug}/login
 
 
 class LoginRequest(BaseModel):

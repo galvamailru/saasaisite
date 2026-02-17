@@ -1,5 +1,6 @@
 """Регистрация, подтверждение по email, логин, JWT."""
 import secrets
+import uuid
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
@@ -55,6 +56,30 @@ def decode_jwt(token: str) -> dict | None:
         )
     except jwt.PyJWTError:
         return None
+
+
+async def register_new_user_with_tenant(
+    db: AsyncSession,
+    email: str,
+    password: str,
+) -> tuple[TenantUser, Tenant]:
+    """
+    Регистрация «один тенант на пользователя»: создаёт новый тенант и пользователя в нём.
+    Email должен быть уникален глобально (не занят ни в одном тенанте).
+    """
+    email_norm = email.lower().strip()
+    existing = (
+        await db.execute(select(TenantUser).where(TenantUser.email == email_norm))
+    ).scalar_one_or_none()
+    if existing:
+        raise ValueError("email_already_registered")
+    slug = "u" + uuid.uuid4().hex[:12]
+    name = email_norm.split("@")[0] if "@" in email_norm else "Моё пространство"
+    tenant = Tenant(slug=slug, name=name or "Моё пространство")
+    db.add(tenant)
+    await db.flush()
+    user = await register_user(db, tenant.id, email, password, tenant.slug)
+    return user, tenant
 
 
 async def register_user(

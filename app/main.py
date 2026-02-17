@@ -43,6 +43,15 @@ async def block_static_index():
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+@app.get("/register")
+async def serve_register_standalone() -> FileResponse:
+    """Регистрация «один тенант на пользователя»: без slug, создаётся новый тенант."""
+    path = STATIC_DIR / "register.html"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="register page not found")
+    return FileResponse(path)
+
+
 @app.get("/{slug}/chat")
 async def serve_chat(slug: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
     tenant = await get_tenant_by_slug(db, slug)

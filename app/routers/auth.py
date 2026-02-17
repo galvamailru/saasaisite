@@ -6,10 +6,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas import LoginRequest, LoginResponse, RegisterRequest, RegisterResponse
-from app.services.auth_service import confirm_email, create_jwt, login_user, register_user
+from app.services.auth_service import (
+    confirm_email,
+    create_jwt,
+    login_user,
+    register_new_user_with_tenant,
+    register_user,
+)
 from app.services.cabinet_service import get_tenant_by_id, get_tenant_by_slug
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["auth"])
+
+
+@router.post("/register", response_model=RegisterResponse)
+async def register_standalone(
+    body: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Регистрация «один тенант на пользователя»: создаётся новый тенант и пользователь в нём.
+    После подтверждения email вход по ссылке /{tenant_slug}/login.
+    """
+    try:
+        user, tenant = await register_new_user_with_tenant(db, body.email, body.password)
+    except ValueError as e:
+        if str(e) == "email_already_registered":
+            raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
+        raise HTTPException(status_code=400, detail=str(e))
+    return RegisterResponse(
+        user_id=str(user.id),
+        tenant_id=str(tenant.id),
+        tenant_slug=tenant.slug,
+    )
 
 
 @router.post("/{tenant_id:uuid}/register", response_model=RegisterResponse)
