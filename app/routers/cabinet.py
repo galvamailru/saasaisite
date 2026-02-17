@@ -678,6 +678,39 @@ async def rag_get_document(
     return JSONResponse(content=json.loads(text))
 
 
+@router.post("/{tenant_id:uuid}/me/rag/documents/preview")
+async def rag_preview_document(
+    tenant_id: UUID,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_cabinet_user),
+):
+    """Преобразует PDF в markdown, возвращает текст без сохранения (для предпросмотра)."""
+    content = await file.read()
+    files = {"file": (file.filename or "doc.pdf", content, file.content_type or "application/pdf")}
+    status, text = await rag_request("POST", "/api/v1/documents/preview", files=files)
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return JSONResponse(content=json.loads(text))
+
+
+@router.post("/{tenant_id:uuid}/me/rag/documents/save")
+async def rag_save_document(
+    tenant_id: UUID,
+    body: dict,
+    user_id: str = Depends(get_cabinet_user),
+):
+    """Сохраняет документ в RAG из markdown (после предпросмотра)."""
+    status, text = await rag_request(
+        "POST",
+        "/api/v1/documents/save",
+        params={"tenant_id": str(tenant_id)},
+        data=body,
+    )
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return JSONResponse(content=json.loads(text), status_code=201)
+
+
 @router.post("/{tenant_id:uuid}/me/rag/documents")
 async def rag_upload_document(
     tenant_id: UUID,

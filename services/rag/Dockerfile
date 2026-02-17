@@ -21,9 +21,9 @@ FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-# docling/OpenCV требуют libGL для рендера PDF
+# docling/OpenCV: libGL для рендера PDF, libglib2.0-0 для libgthread
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 poppler-utils libgl1 \
+    libpq5 poppler-utils libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Только установленные пакеты (без gcc и build-зависимостей)

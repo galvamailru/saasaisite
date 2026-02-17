@@ -14,7 +14,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import Document
 from app.pdf_service import pdf_to_markdown
-from app.schemas import DocumentListItem, DocumentResponse
+from app.schemas import DocumentListItem, DocumentResponse, DocumentSaveBody
 
 router = APIRouter(prefix="/api/v1", tags=["rag"])
 
@@ -62,13 +62,8 @@ async def search_documents(
     return [DocumentListItem.model_validate(d) for d in r.scalars().all()]
 
 
-@router.post("/documents", response_model=DocumentResponse, status_code=201)
-async def create_document(
-    tenant_id: UUID = Query(..., description="ID тенанта"),
-    name: str = Query(..., min_length=1, max_length=512),
-    file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
-):
+def _convert_pdf_to_markdown(file: UploadFile) -> str:
+    """Сохраняет PDF во временный файл, конвертирует в markdown, возвращает текст."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
@@ -81,7 +76,7 @@ async def create_document(
             content = await file.read()
             tmp.write(content)
             tmp_path = Path(tmp.name)
-        md = pdf_to_markdown(tmp_path)
+        return pdf_to_markdown(tmp_path)
     except Exception as e:
         if tmp_path and tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
@@ -89,11 +84,49 @@ async def create_document(
     finally:
         if tmp_path and tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
+
+
+@router.post("/documents/preview")
+async def preview_document(
+    file: UploadFile = File(...),
+):
+    """Преобразует PDF в markdown и возвращает текст без сохранения в БД."""
+    md = _convert_pdf_to_markdown(file)
+    suggested_name = (Path(file.filename or "document").stem or "document").strip()[:512]
+    return {"markdown": md, "suggested_name": suggested_name}
+
+
+@router.post("/documents", response_model=DocumentResponse, status_code=201)
+async def create_document(
+    tenant_id: UUID = Query(..., description="ID тенанта"),
+    name: str = Query(..., min_length=1, max_length=512),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    md = _convert_pdf_to_markdown(file)
     doc = Document(
         tenant_id=tenant_id,
         name=name.strip(),
         content_md=md,
         source_file_name=file.filename,
+    )
+    db.add(doc)
+    await db.flush()
+    return DocumentResponse.model_validate(doc)
+
+
+@router.post("/documents/save", response_model=DocumentResponse, status_code=201)
+async def save_document_from_markdown(
+    tenant_id: UUID = Query(..., description="ID тенанта"),
+    body: DocumentSaveBody = ...,
+    db: AsyncSession = Depends(get_db),
+):
+    """Сохраняет документ в БД из уже преобразованного markdown (после предпросмотра)."""
+    doc = Document(
+        tenant_id=tenant_id,
+        name=body.name.strip(),
+        content_md=body.content_md,
+        source_file_name=body.source_file_name.strip() if body.source_file_name else None,
     )
     db.add(doc)
     await db.flush()

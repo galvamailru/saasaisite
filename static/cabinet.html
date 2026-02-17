@@ -169,6 +169,26 @@
     .rag-doc-meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; font-family: var(--font-mono); }
     .rag-doc-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
     #content input[type="file"] { font-size: 0.875rem; color: var(--text-muted); }
+    /* Модальное окно предпросмотра Markdown (RAG) */
+    .rag-preview-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 1rem; box-sizing: border-box; }
+    .rag-preview-modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; max-width: 720px; width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 12px 48px rgba(0,0,0,0.4); }
+    .rag-preview-modal h3 { margin: 0; padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); font-size: 1.1rem; color: var(--text); }
+    .rag-preview-modal .rag-preview-body { padding: 1rem 1.25rem; overflow: auto; flex: 1; min-height: 0; }
+    .rag-preview-modal .rag-preview-body label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem; }
+    .rag-preview-modal .rag-preview-body input[type="text"] { width: 100%; margin-bottom: 1rem; padding: 0.5rem 0.65rem; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; box-sizing: border-box; }
+    .rag-preview-modal .rag-preview-body textarea { width: 100%; min-height: 280px; padding: 0.75rem; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; font-family: var(--font-mono); font-size: 0.85rem; resize: vertical; box-sizing: border-box; }
+    .rag-preview-modal .rag-preview-footer { padding: 1rem 1.25rem; border-top: 1px solid var(--border); display: flex; gap: 0.75rem; justify-content: flex-end; }
+    .rag-preview-modal .rag-preview-footer button { padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    .rag-preview-modal .rag-preview-footer .btn-cancel { background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); }
+    .rag-preview-modal .rag-preview-footer .btn-save { background: var(--success); border: 1px solid var(--success); color: #fff; }
+    /* Индикатор прогресса загрузки */
+    .upload-progress-wrap { margin-top: 0.75rem; display: none; }
+    .upload-progress-wrap.active { display: block; }
+    .upload-progress-bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; margin-bottom: 0.35rem; }
+    .upload-progress-bar .fill { height: 100%; background: var(--accent); border-radius: 3px; width: 0%; transition: width 0.2s ease; }
+    .upload-progress-text { font-size: 0.8rem; color: var(--text-muted); }
+    .upload-progress-spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: upload-spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes upload-spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -728,7 +748,7 @@
         let html = '<div class="page-gallery"><div class="gallery-detail-back"><a href="#" data-goto="gallery">← К списку галерей</a></div>';
         html += '<h2>' + escapeHtml(g.name) + '</h2>';
         if (g.description) html += '<p class="hint">' + escapeHtml(g.description) + '</p>';
-        html += '<div class="panel gallery-create-panel"><h3>Добавить изображение</h3><input type="file" id="galleryImageFile" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none"><button type="button" id="galleryAddImageBtn">Выбрать файл…</button><span id="galleryUploadStatus" class="hint"></span></div>';
+        html += '<div class="panel gallery-create-panel"><h3>Добавить изображение</h3><input type="file" id="galleryImageFile" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none"><button type="button" id="galleryAddImageBtn">Выбрать файл…</button><span id="galleryUploadStatus" class="hint"></span><div id="galleryProgressWrap" class="upload-progress-wrap"><div class="upload-progress-bar"><div class="fill" id="galleryProgressBar"></div></div><div class="upload-progress-text" id="galleryProgressText"></div></div></div>';
         html += '<h3>Изображения</h3>';
         if (!g.images || g.images.length === 0) {
           html += '<p class="hint">В группе пока нет изображений. Нажмите «Выбрать файл…» и загрузите изображение с компьютера.</p>';
@@ -742,25 +762,33 @@
         document.getElementById('content').innerHTML = html + '</div>';
         document.querySelector('[data-goto="gallery"]')?.addEventListener('click', function(e) { e.preventDefault(); window.history.pushState({}, '', '/' + tenantSlug + '/my/gallery'); route(); });
         document.getElementById('galleryAddImageBtn')?.addEventListener('click', function() { document.getElementById('galleryImageFile').click(); });
-        document.getElementById('galleryImageFile')?.addEventListener('change', async function() {
+        document.getElementById('galleryImageFile')?.addEventListener('change', function() {
           const input = this;
           const file = input.files && input.files[0];
           if (!file) return;
           const statusEl = document.getElementById('galleryUploadStatus');
-          statusEl.textContent = 'Загрузка…';
-          try {
-            const fd = new FormData();
-            fd.append('file', file);
-            const res = await fetch(base + '/' + tenantId + '/me/gallery/groups/' + groupId + '/images', { method: 'POST', headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') }, body: fd });
-            if (!res.ok) { const err = await res.json().catch(function() { return {}; }); statusEl.textContent = ''; alert('Ошибка: ' + (err.detail || res.statusText)); input.value = ''; return; }
-            statusEl.textContent = 'Добавлено.';
-            input.value = '';
-            loadGalleryGroup(groupId);
-          } catch (e) {
-            statusEl.textContent = '';
-            alert('Ошибка: ' + (e && e.message ? e.message : String(e)));
-            input.value = '';
-          }
+          const wrap = document.getElementById('galleryProgressWrap');
+          const barEl = document.getElementById('galleryProgressBar');
+          const textEl = document.getElementById('galleryProgressText');
+          statusEl.textContent = '';
+          wrap.classList.add('active');
+          barEl.style.width = '0%';
+          textEl.textContent = 'Загрузка 0%';
+          const fd = new FormData();
+          fd.append('file', file);
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', base + '/' + tenantId + '/me/gallery/groups/' + groupId + '/images');
+          xhr.setRequestHeader('Authorization', 'Bearer ' + (localStorage.getItem('token') || ''));
+          xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) { var pct = Math.round((e.loaded / e.total) * 100); barEl.style.width = pct + '%'; textEl.textContent = 'Загрузка ' + pct + '%'; }
+          });
+          xhr.addEventListener('load', function() {
+            wrap.classList.remove('active');
+            if (xhr.status >= 200 && xhr.status < 300) { statusEl.textContent = 'Добавлено.'; barEl.style.width = '100%'; input.value = ''; loadGalleryGroup(groupId); }
+            else { try { var err = JSON.parse(xhr.responseText); statusEl.textContent = ''; alert('Ошибка: ' + (err.detail || xhr.statusText)); } catch (e) { alert('Ошибка: ' + xhr.statusText); } input.value = ''; }
+          });
+          xhr.addEventListener('error', function() { wrap.classList.remove('active'); statusEl.textContent = ''; alert('Ошибка сети'); input.value = ''; });
+          xhr.send(fd);
         });
         document.getElementById('content').querySelectorAll('.gallery-delete-image').forEach(function(btn) {
           btn.addEventListener('click', async function() {
@@ -783,7 +811,7 @@
           return;
         }
         const docs = await r.json();
-        html += '<div class="panel rag-upload-panel"><h3>Загрузить PDF</h3><input type="text" id="ragDocName" placeholder="Название документа (или оставьте пустым — подставится имя файла)"><input type="file" id="ragDocFile" accept=".pdf"><button type="button" id="ragUploadBtn">Загрузить</button></div>';
+        html += '<div class="panel rag-upload-panel"><h3>Загрузить PDF</h3><input type="file" id="ragDocFile" accept=".pdf"><button type="button" id="ragUploadBtn">Преобразовать и предпросмотр</button><div id="ragProgressWrap" class="upload-progress-wrap"><div class="upload-progress-bar"><div class="fill" id="ragProgressBar"></div></div><div class="upload-progress-text" id="ragProgressText"></div></div></div>';
         if (docs.length === 0) {
           html += '<p class="hint">Нет документов. Загрузите PDF — он будет распознан и сохранён в виде текста (markdown).</p>';
         } else {
@@ -796,16 +824,51 @@
           html += '</ul>';
         }
         document.getElementById('content').innerHTML = html + '</div>';
-        document.getElementById('ragUploadBtn')?.addEventListener('click', async function() {
-          const name = document.getElementById('ragDocName').value.trim() || document.getElementById('ragDocFile').files?.[0]?.name?.replace(/\.pdf$/i, '') || 'document';
+        document.getElementById('ragUploadBtn')?.addEventListener('click', function() {
           const fileInput = document.getElementById('ragDocFile');
           if (!fileInput?.files?.length) { alert('Выберите PDF'); return; }
+          const wrap = document.getElementById('ragProgressWrap');
+          const barEl = document.getElementById('ragProgressBar');
+          const textEl = document.getElementById('ragProgressText');
+          wrap.classList.add('active');
+          barEl.style.width = '0%';
+          textEl.innerHTML = 'Загрузка файла 0%';
           const fd = new FormData();
           fd.append('file', fileInput.files[0]);
-          fd.append('name', name);
-          const res = await fetch(base + '/' + tenantId + '/me/rag/documents', { method: 'POST', headers: { Authorization: headers().Authorization }, body: fd });
-          if (!res.ok) { alert('Ошибка: ' + await res.text()); return; }
-          loadRag();
+          const sourceFileName = fileInput.files[0].name || null;
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', base + '/' + tenantId + '/me/rag/documents/preview');
+          xhr.setRequestHeader('Authorization', headers().Authorization || '');
+          xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) { var pct = Math.round((e.loaded / e.total) * 100); barEl.style.width = pct + '%'; textEl.innerHTML = 'Загрузка файла ' + pct + '%'; }
+          });
+          xhr.upload.addEventListener('load', function() {
+            barEl.style.width = '100%'; textEl.innerHTML = '<span class="upload-progress-spinner"></span>Преобразование в Markdown…';
+          });
+          xhr.addEventListener('load', function() {
+            wrap.classList.remove('active');
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                var data = JSON.parse(xhr.responseText);
+                var modal = document.createElement('div');
+                modal.className = 'rag-preview-overlay';
+                modal.innerHTML = '<div class="rag-preview-modal"><h3>Предпросмотр Markdown</h3><div class="rag-preview-body"><label>Название документа</label><input type="text" id="ragPreviewName" value="' + escapeHtml(data.suggested_name || 'document') + '"><label>Текст (Markdown)</label><textarea id="ragPreviewMd" spellcheck="false">' + escapeHtml(data.markdown || '') + '</textarea></div><div class="rag-preview-footer"><button type="button" class="btn-cancel rag-preview-cancel">Отмена</button><button type="button" class="btn-save rag-preview-save">Сохранить в базу</button></div></div>';
+                document.body.appendChild(modal);
+                modal.querySelector('.rag-preview-cancel').onclick = function() { modal.remove(); };
+                modal.querySelector('.rag-preview-save').onclick = async function() {
+                  var name = document.getElementById('ragPreviewName').value.trim() || 'document';
+                  var contentMd = document.getElementById('ragPreviewMd').value;
+                  if (!contentMd) { alert('Текст не может быть пустым'); return; }
+                  var saveRes = await fetch(base + '/' + tenantId + '/me/rag/documents/save', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, headers()), body: JSON.stringify({ name: name, content_md: contentMd, source_file_name: sourceFileName || null }) });
+                  if (saveRes.ok) { modal.remove(); loadRag(); }
+                  else { alert('Ошибка сохранения: ' + await saveRes.text()); }
+                };
+                modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+              } catch (e) { alert('Ошибка: ' + (e.message || String(e))); }
+            } else { alert('Ошибка: ' + (xhr.responseText || xhr.statusText)); }
+          });
+          xhr.addEventListener('error', function() { wrap.classList.remove('active'); alert('Ошибка сети'); });
+          xhr.send(fd);
         });
         document.getElementById('content').querySelectorAll('.rag-delete-doc').forEach(function(btn) {
           btn.addEventListener('click', async function() {
