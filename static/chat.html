@@ -277,9 +277,38 @@
         return div.innerHTML;
       }
 
+      var galleryUrlRegex = /(https?:\/\/[^\s]+\/me\/gallery\/groups\/[^\s]+\/images\/[^\s]+\/file)/gi;
+
       function isGalleryImageUrl(line) {
         const t = (line || '').trim();
         return /^https?:\/\/[^\s]+$/i.test(t) && t.indexOf('/me/gallery/groups/') !== -1 && t.indexOf('/images/') !== -1 && t.indexOf('/file') !== -1;
+      }
+
+      function lineToHtmlWithGalleryImgs(line) {
+        const trimmed = (line || '').trim();
+        if (!trimmed) return '';
+        if (isGalleryImageUrl(trimmed)) {
+          return '<img src="' + escapeHtml(trimmed) + '" alt="" class="chat-gallery-img" loading="lazy">';
+        }
+        var parts = trimmed.split(galleryUrlRegex);
+        if (parts.length === 1) {
+          var escaped = escapeHtml(trimmed);
+          var linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+          return escaped.replace(linkRegex, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
+        }
+        function isGalleryUrl(s) {
+          return (s || '').indexOf('/me/gallery/groups/') !== -1 && (s || '').indexOf('/images/') !== -1 && (s || '').indexOf('/file') !== -1;
+        }
+        var out = '';
+        for (var i = 0; i < parts.length; i++) {
+          if (isGalleryUrl(parts[i])) {
+            out += '<img src="' + escapeHtml(parts[i]) + '" alt="" class="chat-gallery-img" loading="lazy">';
+          } else {
+            var esc = escapeHtml(parts[i]);
+            out += esc.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
+          }
+        }
+        return out;
       }
 
       function linkifyAndStripFiles(text) {
@@ -292,14 +321,7 @@
         const lines = cleaned.split('\n');
         const parts = [];
         for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          if (isGalleryImageUrl(line)) {
-            parts.push('<img src="' + escapeHtml(line.trim()) + '" alt="" class="chat-gallery-img" loading="lazy">');
-          } else {
-            const escaped = escapeHtml(line);
-            const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
-            parts.push(escaped.replace(linkRegex, (_, t, u) => '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'));
-          }
+          parts.push(lineToHtmlWithGalleryImgs(lines[i]));
         }
         let html = parts.join('<br>');
         return { html: html || '—', files };
