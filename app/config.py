@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     smtp_from: str = "noreply@example.com"
     frontend_base_url: str = "http://localhost:8000"  # for confirmation link
 
+    # Микросервисы (вызов из пользовательского чата по EXECUTE)
+    gallery_service_url: str = "http://localhost:8010"
+    rag_service_url: str = "http://localhost:8020"
+
     # MinIO (файлы пользователя в личном кабинете)
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "minioadmin"

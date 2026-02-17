@@ -1,7 +1,9 @@
-"""Cabinet: только для зарегистрированных (JWT). Диалоги, чанки промпта, вставка на сайт, админ-чат, профиль."""
+"""Cabinet: только для зарегистрированных (JWT). Диалоги, чанки промпта, вставка на сайт, админ-чат, галерея, RAG, профиль."""
+import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -532,6 +534,149 @@ async def get_embed_code(
         f'width="400" height="600" frameborder="0" title="Чат"></iframe>'
     )
     return EmbedCodeResponse(chat_url=chat_url, iframe_code=iframe_code)
+
+
+# --- Прокси к микросервисам: Галерея и RAG (редактирование через UI кабинета) ---
+from app.services.microservices_client import gallery_request, rag_request
+
+
+@router.get("/{tenant_id:uuid}/me/gallery/groups")
+async def gallery_list_groups(
+    tenant_id: UUID,
+    user_id: str = Depends(get_cabinet_user),
+):
+    status, text = await gallery_request("GET", f"/api/v1/groups?tenant_id={tenant_id}", tenant_id)
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return JSONResponse(content=json.loads(text))
+
+
+@router.get("/{tenant_id:uuid}/me/gallery/groups/{group_id:uuid}")
+async def gallery_get_group(
+    tenant_id: UUID,
+    group_id: UUID,
+    user_id: str = Depends(get_cabinet_user),
+):
+    status, text = await gallery_request("GET", f"/api/v1/groups/{group_id}", tenant_id)
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return JSONResponse(content=json.loads(text))
+
+
+@router.post("/{tenant_id:uuid}/me/gallery/groups")
+async def gallery_create_group(
+    tenant_id: UUID,
+    body: dict,
+    user_id: str = Depends(get_cabinet_user),
+):
+    body["tenant_id"] = str(tenant_id)
+    status, text = await gallery_request("POST", "/api/v1/groups", tenant_id, json_body=body)
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return JSONResponse(content=json.loads(text), status_code=201)
+
+
+@router.patch("/{tenant_id:uuid}/me/gallery/groups/{group_id:uuid}")
+async def gallery_update_group(
+    tenant_id: UUID,
+    group_id: UUID,
+    body: dict,
+    user_id: str = Depends(get_cabinet_user),
+):
+    status, text = await gallery_request("PATCH", f"/api/v1/groups/{group_id}", tenant_id, json_body=body)
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return JSONResponse(content=json.loads(text))
+
+
+@router.delete("/{tenant_id:uuid}/me/gallery/groups/{group_id:uuid}")
+async def gallery_delete_group(
+    tenant_id: UUID,
+    group_id: UUID,
+    user_id: str = Depends(get_cabinet_user),
+):
+    status, text = await gallery_request("DELETE", f"/api/v1/groups/{group_id}", tenant_id)
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return Response(status_code=204)
+
+
+@router.post("/{tenant_id:uuid}/me/gallery/groups/{group_id:uuid}/images")
+async def gallery_add_image(
+    tenant_id: UUID,
+    group_id: UUID,
+    body: dict,
+    user_id: str = Depends(get_cabinet_user),
+):
+    status, text = await gallery_request("POST", f"/api/v1/groups/{group_id}/images", tenant_id, json_body=body)
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return JSONResponse(content=json.loads(text), status_code=201)
+
+
+@router.delete("/{tenant_id:uuid}/me/gallery/groups/{group_id:uuid}/images/{image_id:uuid}")
+async def gallery_delete_image(
+    tenant_id: UUID,
+    group_id: UUID,
+    image_id: UUID,
+    user_id: str = Depends(get_cabinet_user),
+):
+    status, text = await gallery_request("DELETE", f"/api/v1/groups/{group_id}/images/{image_id}", tenant_id)
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return Response(status_code=204)
+
+
+@router.get("/{tenant_id:uuid}/me/rag/documents")
+async def rag_list_documents(
+    tenant_id: UUID,
+    user_id: str = Depends(get_cabinet_user),
+):
+    status, text = await rag_request("GET", f"/api/v1/documents", params={"tenant_id": str(tenant_id)})
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return JSONResponse(content=json.loads(text))
+
+
+@router.get("/{tenant_id:uuid}/me/rag/documents/{document_id:uuid}")
+async def rag_get_document(
+    tenant_id: UUID,
+    document_id: UUID,
+    user_id: str = Depends(get_cabinet_user),
+):
+    status, text = await rag_request("GET", f"/api/v1/documents/{document_id}")
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return JSONResponse(content=json.loads(text))
+
+
+@router.post("/{tenant_id:uuid}/me/rag/documents")
+async def rag_upload_document(
+    tenant_id: UUID,
+    file: UploadFile = File(...),
+    name: str = Form(""),
+    user_id: str = Depends(get_cabinet_user),
+):
+    doc_name = (name or (file.filename or "document").replace(".pdf", "")).strip() or "document"
+    params = {"tenant_id": str(tenant_id), "name": doc_name}
+    content = await file.read()
+    files = {"file": (file.filename or "doc.pdf", content, file.content_type or "application/pdf")}
+    status, text = await rag_request("POST", "/api/v1/documents", params=params, files=files)
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return JSONResponse(content=json.loads(text), status_code=201)
+
+
+@router.delete("/{tenant_id:uuid}/me/rag/documents/{document_id:uuid}")
+async def rag_delete_document(
+    tenant_id: UUID,
+    document_id: UUID,
+    user_id: str = Depends(get_cabinet_user),
+):
+    status, text = await rag_request("DELETE", f"/api/v1/documents/{document_id}")
+    if status >= 400:
+        return JSONResponse(content={"detail": text}, status_code=status)
+    return Response(status_code=204)
 
 
 # Admin chat

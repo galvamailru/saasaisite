@@ -1,4 +1,4 @@
-"""Chat: POST message -> SSE stream. Системный промпт из чанков тенанта."""
+"""Chat: POST message -> SSE stream. Системный промпт из чанков. EXECUTE обрабатывается как у админ-бота."""
 import json
 from uuid import UUID
 
@@ -13,8 +13,12 @@ from app.services.chat_service import get_or_create_dialog, get_dialog_messages_
 from app.services.leads import save_lead_if_contact
 from app.services.prompt_loader import load_prompt_for_tenant
 from app.services.cabinet_service import get_tenant_by_id
+from app.services.user_execute_service import process_user_reply
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["chat"])
+
+# Размер чанка при «стриме» уже обработанного ответа (для плавного отображения)
+_STREAM_CHUNK = 80
 
 
 async def _sse_stream(
@@ -36,6 +40,7 @@ async def _sse_stream(
         return
     if is_test:
         history = [{"role": "user", "content": message_text}]
+        dialog = None
     else:
         dialog = await get_or_create_dialog(db, tenant_id, user_id, dialog_id)
         history = await get_dialog_messages_for_llm(db, dialog.id, tenant_id)
@@ -46,16 +51,23 @@ async def _sse_stream(
     try:
         async for chunk in stream_chat(prompt, history):
             full_response.append(chunk)
-            yield f"data: {json.dumps({'content': chunk})}\n\n"
     except Exception:
-        if not is_test and full_response:
+        if not is_test and full_response and dialog:
             full_text = "".join(full_response)
             if full_text:
                 await save_message(db, tenant_id, user_id, dialog.id, "assistant", full_text)
         raise
-    full_text = "".join(full_response)
-    if not is_test:
-        await save_message(db, tenant_id, user_id, dialog.id, "assistant", full_text)
+    raw_text = "".join(full_response)
+    # Конвейер EXECUTE: разбор команд, вызов микросервисов, подстановка результатов
+    try:
+        final_text = await process_user_reply(tenant_id, raw_text)
+    except Exception:
+        final_text = raw_text
+    # Стримим клиенту уже обработанный ответ (чунками для плавного отображения)
+    for i in range(0, len(final_text), _STREAM_CHUNK):
+        yield f"data: {json.dumps({'content': final_text[i:i + _STREAM_CHUNK]})}\n\n"
+    if not is_test and dialog:
+        await save_message(db, tenant_id, user_id, dialog.id, "assistant", final_text)
     yield "data: [DONE]\n\n"
 
 
