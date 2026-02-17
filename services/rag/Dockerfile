@@ -7,7 +7,7 @@ FROM python:3.11-slim AS builder
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc poppler-utils \
+    libpq-dev gcc poppler-utils tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -21,9 +21,9 @@ FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
-# docling/OpenCV: libGL для рендера PDF, libglib2.0-0 для libgthread
+# docling/OpenCV: libGL для рендера PDF, libglib2.0-0 для libgthread; tesseract для OCR
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 poppler-utils libgl1 libglib2.0-0 \
+    libpq5 poppler-utils libgl1 libglib2.0-0 tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 # Только установленные пакеты (без gcc и build-зависимостей)
