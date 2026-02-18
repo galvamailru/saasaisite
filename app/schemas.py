@@ -101,7 +101,7 @@ class ProfileResponse(BaseModel):
 class ProfileUpdate(BaseModel):
     display_name: str | None = Field(None, max_length=256)
     contact: str | None = Field(None, max_length=256)
-    system_prompt: str | None = Field(None, max_length=20000)
+    system_prompt: str | None = None
 
 
 # Cabinet: admin bot prompt (единый системный промпт)

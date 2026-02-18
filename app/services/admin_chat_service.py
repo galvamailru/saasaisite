@@ -5,9 +5,11 @@ import json
 import re
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm_client import chat_once
+from app.models import Tenant
 from app.services.prompt_loader import load_admin_prompt
 from app.services.admin_prompt_service import get_admin_system_prompt
 from app.services.cabinet_service import get_tenant_by_id
@@ -64,14 +66,13 @@ async def _fetch_galleries_and_documents(tenant_id: UUID) -> tuple[list[dict], l
 async def _build_state(db: AsyncSession, tenant_id: UUID) -> str:
     """
     Контекст для LLM: где редактируются промпты, список галерей и документов RAG тенанта,
-    превью текущего промпта бота-пользователя (чтобы видеть, что уже описано и чего не хватает).
+    превью текущего промпта бота-пользователя. Промпт всегда загружается из БД заново,
+    чтобы анализ проводился для актуальной версии.
     """
-    tenant = await get_tenant_by_id(db, tenant_id)
-    prompt_preview = ""
-    if tenant and getattr(tenant, "system_prompt", None):
-        prompt_preview = (tenant.system_prompt or "").strip()[:3000]
-        if len(tenant.system_prompt or "") > 3000:
-            prompt_preview += "\n... (обрезано)"
+    # Явно загружаем промпт из БД при каждом запросе — актуальная версия для анализа (полностью, без обрезки)
+    r = await db.execute(select(Tenant.system_prompt).where(Tenant.id == tenant_id))
+    row = r.one_or_none()
+    prompt_preview = (row[0] or "").strip() if row and row[0] else ""
 
     galleries, documents = await _fetch_galleries_and_documents(tenant_id)
 
@@ -95,7 +96,7 @@ async def _build_state(db: AsyncSession, tenant_id: UUID) -> str:
             lines.append(f"  — id: {d['id']}, название: {d['name']}")
 
     lines.append("")
-    lines.append("Текущий промпт бота-пользователя (проверь, описаны ли в нём сценарии для перечисленных галерей и документов):")
+    lines.append("Текущий промпт бота-пользователя (загружен из БД для этого запроса — актуальная версия; проверь, описаны ли в нём сценарии для перечисленных галерей и документов):")
     lines.append("---")
     lines.append(prompt_preview or "(промпт пуст)")
     lines.append("---")
