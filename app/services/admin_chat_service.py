@@ -133,28 +133,72 @@ async def _apply_save_prompt_blocks(db: AsyncSession, tenant_id: UUID, reply: st
 def _extract_validation(reply: str) -> tuple[str, bool | None, str | None]:
     """
     Ищет в ответе JSON с полями validation (bool) и reason (str).
+    Поддерживает: чистый JSON, JSON внутри ```json ... ```, объект в тексте.
     Возвращает (reply_для_показа, validation, reason).
-    Если JSON найден и был основным содержимым — заменяем его на читаемое сообщение.
     """
     reply_clean = reply.strip()
     validation: bool | None = None
     reason: str | None = None
 
-    # Пробуем распарсить весь ответ как JSON
+    def apply_validation(obj: dict) -> bool:
+        nonlocal validation, reason, reply_clean
+        if not isinstance(obj, dict) or "validation" not in obj:
+            return False
+        validation = bool(obj["validation"])
+        reason = str(obj.get("reason") or "").strip() or None
+        reply_clean = (
+            ("Промпт требует доработки: " + reason) if not validation and reason
+            else ("Валидация пройдена. " + (reason or "")) if validation else reply_clean
+        )
+        return True
+
+    # 1) Пробуем распарсить весь ответ как JSON
     try:
         obj = json.loads(reply_clean)
-        if isinstance(obj, dict) and "validation" in obj:
-            validation = bool(obj["validation"])
-            reason = str(obj.get("reason") or "").strip() or None
-            reply_clean = (
-                ("Промпт требует доработки: " + reason) if not validation and reason
-                else ("Валидация пройдена. " + (reason or "")) if validation else reply_clean
-            )
+        if apply_validation(obj):
             return reply_clean, validation, reason
     except (json.JSONDecodeError, TypeError):
         pass
 
-    # Ищем JSON-объект в тексте (первое вхождение { ... "validation" ... })
+    # 2) Извлекаем JSON из блока ```json ... ``` или ``` ... ```
+    code_block_re = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
+    for m in code_block_re.finditer(reply_clean):
+        raw = m.group(1).strip()
+        try:
+            obj = json.loads(raw)
+            if apply_validation(obj):
+                reply_clean = code_block_re.sub("", reply_clean, count=1).strip()
+                reply_clean = ("Промпт требует доработки: " + reason) if not validation and reason else ("Валидация пройдена. " + (reason or ""))
+                return reply_clean, validation, reason
+        except (json.JSONDecodeError, TypeError, IndexError):
+            continue
+
+    # 3) Ищем первый объект {...} с полем "validation" (по балансу скобок)
+    start = reply_clean.find('{"validation"')
+    if start == -1:
+        start = reply_clean.find("{")
+    if start != -1:
+        depth = 0
+        for i in range(start, len(reply_clean)):
+            if reply_clean[i] == "{":
+                depth += 1
+            elif reply_clean[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        obj = json.loads(reply_clean[start : i + 1])
+                        if apply_validation(obj):
+                            before = reply_clean[:start].strip()
+                            after = reply_clean[i + 1 :].strip()
+                            summary = ("Промпт требует доработки: " + reason) if not validation and reason else ("Валидация пройдена. " + (reason or ""))
+                            parts = [p for p in (before, summary, after) if p]
+                            reply_clean = "\n\n".join(parts) if parts else summary
+                            return reply_clean, validation, reason
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                    break
+
+    # 4) Regex для компактного JSON в одну строку
     pattern = re.compile(
         r'\{\s*"validation"\s*:\s*(true|false)\s*,\s*"reason"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}',
         re.IGNORECASE | re.DOTALL,
@@ -162,11 +206,10 @@ def _extract_validation(reply: str) -> tuple[str, bool | None, str | None]:
     m = pattern.search(reply_clean)
     if m:
         validation = m.group(1).lower() == "true"
-        reason = m.group(2).replace("\\\"", '"').strip() or None
-        # Убираем сырой JSON из показа, оставляем остальной текст или подставляем сообщение
+        reason = m.group(2).replace('\\"', '"').strip() or None
         before = reply_clean[: m.start()].strip()
         after = reply_clean[m.end() :].strip()
-        summary = ("Промпт требует доработки: " + reason) if not validation and reason else ("Валидация пройдена. " + (reason or "")) if validation else ""
+        summary = ("Промпт требует доработки: " + reason) if not validation and reason else ("Валидация пройдена. " + (reason or ""))
         parts = [p for p in (before, summary, after) if p]
         reply_clean = "\n\n".join(parts) if parts else (summary or reply_clean)
 
@@ -206,7 +249,8 @@ async def handle_admin_message(
     reply, saved = await _apply_save_prompt_blocks(db, tenant_id, reply)
     reply = reply.strip()
     if saved:
-        reply = (reply + "\n\n✓ Промпт сохранён.") if reply else "✓ Промпт сохранён."
+        saved_msg = "✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт» — там отображается текущий текст."
+        reply = (saved_msg + "\n\n" + reply) if reply else saved_msg
 
     reply, validation, validation_reason = _extract_validation(reply)
     reply = reply.strip() or "Готово."

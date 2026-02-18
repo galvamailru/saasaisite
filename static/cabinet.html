@@ -392,7 +392,6 @@
           return;
         }
         const data = await rPrompt.json();
-        const systemEsc = (data.system_prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         var galleries = [];
         var documents = [];
         if (rGallery.ok) { try { var gList = await rGallery.json(); galleries = Array.isArray(gList) ? gList : (gList.items || gList.groups || []); } catch (_) {} }
@@ -417,11 +416,12 @@
 
         html += '<div class="admin-prompt-system">';
         html += '<label>Системный промпт</label>';
-        html += '<textarea id="userSystemPrompt" placeholder="Опишите роль агента, бизнес-цель и ключевые правила...">' + systemEsc + '</textarea>';
+        html += '<textarea id="userSystemPrompt" placeholder="Опишите роль агента, бизнес-цель и ключевые правила..."></textarea>';
         html += '<div style="margin-top:0.5rem;"><button type="button" id="saveUserPrompt">Сохранить</button> ';
         html += '<button type="button" id="restoreUserPromptDefault">Восстановить из файла</button></div>';
         html += '</div>';
         document.getElementById('content').innerHTML = html;
+        document.getElementById('userSystemPrompt').value = (data.system_prompt != null ? data.system_prompt : '');
 
         document.getElementById('saveUserPrompt').addEventListener('click', async () => {
           const text = document.getElementById('userSystemPrompt').value;
@@ -451,16 +451,16 @@
           return;
         }
         const promptData = await rPrompt.json();
-        const systemEsc = (promptData.system_prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         let html = '<h2>Промпт админ-бота</h2>';
         html += '<p class="hint">Единый системный промпт. Если пусто — используется промпт из файла по умолчанию.</p>';
         html += '<div class="admin-prompt-system">';
         html += '<label>Системный промпт</label>';
-        html += '<textarea id="adminSystemPrompt" placeholder="Базовые инструкции для админ-помощника...">' + systemEsc + '</textarea>';
+        html += '<textarea id="adminSystemPrompt" placeholder="Базовые инструкции для админ-помощника..."></textarea>';
         html += '<div style="margin-top:0.5rem;"><button type="button" id="saveAdminSystemPrompt">Сохранить</button> ';
         html += '<button type="button" id="restoreAdminPromptDefault">Восстановить из файла</button></div>';
         html += '</div>';
         document.getElementById('content').innerHTML = html;
+        document.getElementById('adminSystemPrompt').value = (promptData.system_prompt != null ? promptData.system_prompt : '');
 
         document.getElementById('saveAdminSystemPrompt').addEventListener('click', async () => {
           const text = document.getElementById('adminSystemPrompt').value;
@@ -491,8 +491,8 @@
         if (data && typeof data.validation === 'boolean') {
           if (data.validation === false) {
             toggler.classList.add('needs-attention');
-            badge.textContent = data.validation_reason ? 'Промпт требует доработки: ' + data.validation_reason : 'Промпт требует доработки';
-            badge.style.display = '';
+            badge.textContent = (data.validation_reason && data.validation_reason.trim()) ? ('Промпт требует доработки: ' + data.validation_reason) : 'Промпт требует доработки';
+            badge.style.display = 'inline-block';
           } else {
             toggler.classList.remove('needs-attention');
             badge.style.display = 'none';
