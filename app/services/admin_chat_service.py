@@ -5,11 +5,9 @@ import json
 import re
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm_client import chat_once
-from app.models import Tenant
 from app.services.prompt_loader import load_admin_prompt
 from app.services.admin_prompt_service import get_admin_system_prompt
 from app.services.cabinet_service import get_tenant_by_id
@@ -65,20 +63,11 @@ async def _fetch_galleries_and_documents(tenant_id: UUID) -> tuple[list[dict], l
 
 async def _build_state(db: AsyncSession, tenant_id: UUID) -> str:
     """
-    Контекст для LLM: где редактируются промпты, список галерей и документов RAG тенанта,
-    превью текущего промпта бота-пользователя. Промпт всегда загружается из БД заново,
-    чтобы анализ проводился для актуальной версии.
+    Контекст для LLM: только списки галерей и документов RAG тенанта с предложениями.
     """
-    # Явно загружаем промпт из БД при каждом запросе — актуальная версия для анализа (полностью, без обрезки)
-    r = await db.execute(select(Tenant.system_prompt).where(Tenant.id == tenant_id))
-    row = r.one_or_none()
-    prompt_preview = (row[0] or "").strip() if row and row[0] else ""
-
     galleries, documents = await _fetch_galleries_and_documents(tenant_id)
 
     lines = [
-        "Промпт клиентского бота редактируется в разделе «Промпт», промпт админ-бота — в «Промпт админ-бота». Сохранение — через [SAVE_PROMPT].",
-        "",
         "Список галерей изображений у тенанта (если в промпте бота-пользователя нет сценария для галереи — предложи добавить):",
     ]
     if not galleries:
@@ -94,12 +83,6 @@ async def _build_state(db: AsyncSession, tenant_id: UUID) -> str:
     else:
         for d in documents:
             lines.append(f"  — id: {d['id']}, название: {d['name']}")
-
-    lines.append("")
-    lines.append("Текущий промпт бота-пользователя (загружен из БД для этого запроса — актуальная версия; проверь, описаны ли в нём сценарии для перечисленных галерей и документов):")
-    lines.append("---")
-    lines.append(prompt_preview or "(промпт пуст)")
-    lines.append("---")
 
     return "\n".join(lines)
 
@@ -269,5 +252,7 @@ async def handle_admin_message(
         "prompt_saved": saved,
         "raw_reply": raw_reply,
         "request_system": system_with_state,
+        "request_system_prompt": system_prompt.rstrip(),
+        "request_context": state,
         "request_messages": messages,
     }

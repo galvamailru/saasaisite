@@ -674,9 +674,17 @@ async def admin_chat(
         )
     reply_text = result["reply"]
     # Лог: что ушло в DeepSeek и что вернулось (сырой ответ до постобработки)
-    request_system = result.get("request_system") or ""
+    # Отдельно выводим контекст (галереи, документы, промпт бота-пользователя), чтобы он был виден в логе
+    request_system_prompt = result.get("request_system_prompt") or ""
+    request_context = result.get("request_context") or ""
     request_messages = result.get("request_messages") or []
-    request_to_llm_parts = ["[system]\n", request_system, "\n\n[messages]\n"]
+    request_to_llm_parts = [
+        "[system - инструкции админ-боту]\n",
+        request_system_prompt,
+        "\n\n[system - контекст: галереи, документы RAG, текущий промпт бота-пользователя]\n",
+        request_context,
+        "\n\n[messages]\n",
+    ]
     for m in request_messages:
         role = m.get("role", "")
         content = (m.get("content") or "").strip()
