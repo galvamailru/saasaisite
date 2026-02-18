@@ -133,8 +133,6 @@ class UserProfile(Base):
     display_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     contact: Mapped[str | None] = mapped_column(String(256), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
-    # Ответы на анкету для коммерческого промпта (JSONB).
-    prompt_survey: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     tenant = relationship("Tenant", back_populates="user_profiles")
 

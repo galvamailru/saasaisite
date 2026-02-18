@@ -19,14 +19,8 @@ from app.schemas import (
     ProfileUpdate,
     SavedItemCreate,
     SavedItemResponse,
-    PromptChunkResponse,
-    PromptChunkCreate,
-    PromptChunkUpdate,
     AdminPromptResponse,
     AdminPromptUpdate,
-    AdminPromptChunkResponse,
-    AdminPromptChunkCreate,
-    AdminPromptChunkUpdate,
     EmbedCodeResponse,
     AdminChatRequest,
     AdminChatResponse,
@@ -44,20 +38,8 @@ from app.services.cabinet_service import (
     upsert_profile,
 )
 from app.models import SavedItem
-from app.services.prompt_chunk_service import (
-    list_chunks,
-    create_chunk,
-    update_chunk,
-    delete_chunk,
-)
-from app.services.admin_prompt_service import (
-    get_admin_system_prompt,
-    set_admin_system_prompt,
-    list_admin_chunks,
-    create_admin_chunk,
-    update_admin_chunk,
-    delete_admin_chunk,
-)
+from app.services.prompt_loader import load_prompt, load_admin_prompt
+from app.services.admin_prompt_service import get_admin_system_prompt, set_admin_system_prompt
 from app.services.admin_chat_service import handle_admin_message
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["cabinet"])
@@ -286,14 +268,12 @@ async def get_user_profile(
             display_name=None,
             contact=None,
             system_prompt=system_prompt,
-            prompt_survey=None,
         )
     return ProfileResponse(
         user_id=profile.user_id,
         display_name=profile.display_name,
         contact=profile.contact,
         system_prompt=system_prompt,
-        prompt_survey=profile.prompt_survey or None,
     )
 
 
@@ -311,9 +291,7 @@ async def update_user_profile(
         db, tenant_id, user_id,
         display_name=body.display_name,
         contact=body.contact,
-        prompt_survey=body.prompt_survey.model_dump() if body.prompt_survey is not None else None,
     )
-    # Обновление системного промпта пользовательского бота для этого тенанта
     if body.system_prompt is not None:
         tenant.system_prompt = (body.system_prompt or "").strip() or None
         await db.flush()
@@ -322,28 +300,13 @@ async def update_user_profile(
         display_name=profile.display_name,
         contact=profile.contact,
         system_prompt=tenant.system_prompt,
-        prompt_survey=profile.prompt_survey or None,
     )
 
 
-# Prompt chunks (max 2000 chars each)
-@router.get("/{tenant_id:uuid}/me/prompt/chunks", response_model=list[PromptChunkResponse])
-async def list_prompt_chunks(
+# Промпт пользовательского бота: значение по умолчанию из файла (для кнопки «Восстановить из файла»)
+@router.get("/{tenant_id:uuid}/me/prompt/default", response_model=AdminPromptResponse)
+async def get_user_prompt_default(
     tenant_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    chunks = await list_chunks(db, tenant_id)
-    return [PromptChunkResponse(id=c.id, position=c.position, question=c.question, content=c.content) for c in chunks]
-
-
-@router.post("/{tenant_id:uuid}/me/prompt/chunks", response_model=PromptChunkResponse, status_code=201)
-async def create_prompt_chunk(
-    tenant_id: UUID,
-    body: PromptChunkCreate,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_cabinet_user),
 ):
@@ -351,47 +314,13 @@ async def create_prompt_chunk(
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     try:
-        chunk = await create_chunk(db, tenant_id, body.content, body.position, body.question)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return PromptChunkResponse(id=chunk.id, position=chunk.position, question=chunk.question, content=chunk.content)
+        system_prompt = load_prompt()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Default prompt file not found")
+    return AdminPromptResponse(system_prompt=system_prompt)
 
 
-@router.patch("/{tenant_id:uuid}/me/prompt/chunks/{chunk_id:uuid}", response_model=PromptChunkResponse)
-async def patch_prompt_chunk(
-    tenant_id: UUID,
-    chunk_id: UUID,
-    body: PromptChunkUpdate,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    chunk = await update_chunk(
-        db, tenant_id, chunk_id, content=body.content, position=body.position, question=body.question
-    )
-    if not chunk:
-        raise HTTPException(status_code=404, detail="chunk not found")
-    return PromptChunkResponse(id=chunk.id, position=chunk.position, question=chunk.question, content=chunk.content)
-
-
-@router.delete("/{tenant_id:uuid}/me/prompt/chunks/{chunk_id:uuid}", status_code=204)
-async def delete_prompt_chunk(
-    tenant_id: UUID,
-    chunk_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    ok = await delete_chunk(db, tenant_id, chunk_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="chunk not found")
-
-
-# Admin bot prompt (system + chunks: question + detailed description)
+# Admin bot prompt (единый системный промпт)
 @router.get("/{tenant_id:uuid}/me/admin-prompt", response_model=AdminPromptResponse)
 async def get_admin_prompt(
     tenant_id: UUID,
@@ -420,30 +349,10 @@ async def patch_admin_prompt(
     return AdminPromptResponse(system_prompt=system_prompt)
 
 
-@router.get("/{tenant_id:uuid}/me/admin-prompt/chunks", response_model=list[AdminPromptChunkResponse])
-async def list_admin_prompt_chunks(
+# Промпт админ-бота по умолчанию из файла (для кнопки «Восстановить из файла»)
+@router.get("/{tenant_id:uuid}/me/admin-prompt/default", response_model=AdminPromptResponse)
+async def get_admin_prompt_default(
     tenant_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    chunks = await list_admin_chunks(db, tenant_id)
-    return [
-        AdminPromptChunkResponse(id=c.id, position=c.position, question=c.question, content=c.content)
-        for c in chunks
-    ]
-
-
-@router.post(
-    "/{tenant_id:uuid}/me/admin-prompt/chunks",
-    response_model=AdminPromptChunkResponse,
-    status_code=201,
-)
-async def create_admin_prompt_chunk(
-    tenant_id: UUID,
-    body: AdminPromptChunkCreate,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_cabinet_user),
 ):
@@ -451,59 +360,10 @@ async def create_admin_prompt_chunk(
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     try:
-        chunk = await create_admin_chunk(
-            db, tenant_id, body.content, body.position, body.question
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return AdminPromptChunkResponse(
-        id=chunk.id, position=chunk.position, question=chunk.question, content=chunk.content
-    )
-
-
-@router.patch(
-    "/{tenant_id:uuid}/me/admin-prompt/chunks/{chunk_id:uuid}",
-    response_model=AdminPromptChunkResponse,
-)
-async def patch_admin_prompt_chunk(
-    tenant_id: UUID,
-    chunk_id: UUID,
-    body: AdminPromptChunkUpdate,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    chunk = await update_admin_chunk(
-        db, tenant_id, chunk_id,
-        content=body.content,
-        position=body.position,
-        question=body.question,
-    )
-    if not chunk:
-        raise HTTPException(status_code=404, detail="chunk not found")
-    return AdminPromptChunkResponse(
-        id=chunk.id, position=chunk.position, question=chunk.question, content=chunk.content
-    )
-
-
-@router.delete(
-    "/{tenant_id:uuid}/me/admin-prompt/chunks/{chunk_id:uuid}",
-    status_code=204,
-)
-async def delete_admin_prompt_chunk(
-    tenant_id: UUID,
-    chunk_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user_id: str = Depends(get_cabinet_user),
-):
-    tenant = await get_tenant_by_id(db, tenant_id)
-    if not tenant:
-        raise HTTPException(status_code=404, detail="tenant not found")
-    ok = await delete_admin_chunk(db, tenant_id, chunk_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="chunk not found")
+        system_prompt = load_admin_prompt()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Default admin prompt file not found")
+    return AdminPromptResponse(system_prompt=system_prompt)
 
 
 # Лиды (контакты из диалогов)
