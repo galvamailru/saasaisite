@@ -422,12 +422,21 @@
         html += '<button type="button" id="restoreUserPromptDefault">Восстановить из файла</button></div>';
         html += '</div>';
         document.getElementById('content').innerHTML = html;
-        (function setUserPromptValue() {
+        var userPromptVal = (data && (data.system_prompt != null && data.system_prompt !== undefined)) ? String(data.system_prompt) : '';
+        function setUserPromptValue() {
           var el = document.getElementById('userSystemPrompt');
-          var val = (data.system_prompt != null && data.system_prompt !== undefined) ? String(data.system_prompt) : '';
-          if (el) el.value = val;
-          else setTimeout(setUserPromptValue, 50);
-        })();
+          if (el) { el.value = userPromptVal; return; }
+          requestAnimationFrame(setUserPromptValue);
+        }
+        setUserPromptValue();
+        setTimeout(function() {
+          var el = document.getElementById('userSystemPrompt');
+          if (el) el.value = userPromptVal;
+        }, 100);
+        setTimeout(function() {
+          var el = document.getElementById('userSystemPrompt');
+          if (el) el.value = userPromptVal;
+        }, 250);
 
         document.getElementById('saveUserPrompt').addEventListener('click', async () => {
           const text = document.getElementById('userSystemPrompt').value;
@@ -466,12 +475,21 @@
         html += '<button type="button" id="restoreAdminPromptDefault">Восстановить из файла</button></div>';
         html += '</div>';
         document.getElementById('content').innerHTML = html;
-        (function setAdminPromptValue() {
+        var adminPromptVal = (promptData && (promptData.system_prompt != null && promptData.system_prompt !== undefined)) ? String(promptData.system_prompt) : '';
+        function setAdminPromptValue() {
           var el = document.getElementById('adminSystemPrompt');
-          var val = (promptData.system_prompt != null && promptData.system_prompt !== undefined) ? String(promptData.system_prompt) : '';
-          if (el) el.value = val;
-          else setTimeout(setAdminPromptValue, 50);
-        })();
+          if (el) { el.value = adminPromptVal; return; }
+          requestAnimationFrame(setAdminPromptValue);
+        }
+        setAdminPromptValue();
+        setTimeout(function() {
+          var el = document.getElementById('adminSystemPrompt');
+          if (el) el.value = adminPromptVal;
+        }, 100);
+        setTimeout(function() {
+          var el = document.getElementById('adminSystemPrompt');
+          if (el) el.value = adminPromptVal;
+        }, 250);
 
         document.getElementById('saveAdminSystemPrompt').addEventListener('click', async () => {
           const text = document.getElementById('adminSystemPrompt').value;
