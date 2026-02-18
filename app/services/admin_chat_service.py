@@ -1,4 +1,7 @@
-"""Админ-чат: диалог-помощник. Единый системный промпт админ-бота из БД или файла."""
+"""Админ-чат: диалог-помощник. Единый системный промпт админ-бота из БД или файла.
+В ответе бота блок [SAVE_PROMPT]...[/SAVE_PROMPT] — сохранение промпта бота-пользователя в БД.
+При валидации бот может вернуть JSON с полями validation и reason — парсим и отдаём во фронт."""
+import json
 import re
 from uuid import UUID
 
@@ -7,8 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.llm_client import chat_once
 from app.services.prompt_loader import load_admin_prompt
 from app.services.admin_prompt_service import get_admin_system_prompt
+from app.services.cabinet_service import get_tenant_by_id
+from app.services.microservices_client import gallery_request, rag_request
 
 EXECUTE_BLOCK_RE = re.compile(r"\[EXECUTE\](.*?)\[/EXECUTE\]", re.DOTALL | re.IGNORECASE)
+SAVE_PROMPT_RE = re.compile(r"\[SAVE_PROMPT\](.*?)\[/SAVE_PROMPT\]", re.DOTALL | re.IGNORECASE)
 
 ADMIN_SYSTEM_PROMPT_FALLBACK = """Ты — Админ-помощник. Помогаешь настроить промпт чат-бота для клиентов. Промпт редактируется в разделе «Профиль» (системный промпт бота) и «Промпт админ-бота». Веди диалог пошагово, задавай уточняющие вопросы. Администратор команд не вводит."""
 
@@ -24,16 +30,147 @@ async def _get_admin_prompt_assembled(db: AsyncSession, tenant_id: UUID) -> str:
         return ADMIN_SYSTEM_PROMPT_FALLBACK
 
 
-def _build_state() -> str:
-    """Краткий контекст для LLM: где редактируются промпты."""
-    return (
-        "Промпт клиентского бота (единый текст) редактируется в разделе «Профиль». "
-        "Промпт админ-бота — в разделе «Промпт админ-бота». Оба можно восстановить из файла по умолчанию."
-    )
+async def _fetch_galleries_and_documents(tenant_id: UUID) -> tuple[list[dict], list[dict]]:
+    """Загружает список галерей и документов RAG тенанта для контекста админ-бота."""
+    galleries: list[dict] = []
+    documents: list[dict] = []
+    try:
+        status, text = await gallery_request(
+            "GET", f"/api/v1/groups?tenant_id={tenant_id}", tenant_id
+        )
+        if status == 200 and text:
+            data = json.loads(text)
+            items = data if isinstance(data, list) else (data.get("items") or data.get("groups") or [])
+            for g in items:
+                if isinstance(g, dict):
+                    galleries.append({"id": str(g.get("id", "")), "name": str(g.get("name") or g.get("title") or "Без названия")})
+    except (json.JSONDecodeError, Exception):
+        pass
+    try:
+        status, text = await rag_request(
+            "GET", "/api/v1/documents", params={"tenant_id": str(tenant_id)}
+        )
+        if status == 200 and text:
+            data = json.loads(text)
+            items = data if isinstance(data, list) else (data.get("items") or data.get("documents") or [])
+            for d in items:
+                if isinstance(d, dict):
+                    documents.append({"id": str(d.get("id", "")), "name": str(d.get("name") or d.get("title") or d.get("filename") or "Без названия")})
+    except (json.JSONDecodeError, Exception):
+        pass
+    return galleries, documents
+
+
+async def _build_state(db: AsyncSession, tenant_id: UUID) -> str:
+    """
+    Контекст для LLM: где редактируются промпты, список галерей и документов RAG тенанта,
+    превью текущего промпта бота-пользователя (чтобы видеть, что уже описано и чего не хватает).
+    """
+    tenant = await get_tenant_by_id(db, tenant_id)
+    prompt_preview = ""
+    if tenant and getattr(tenant, "system_prompt", None):
+        prompt_preview = (tenant.system_prompt or "").strip()[:3000]
+        if len(tenant.system_prompt or "") > 3000:
+            prompt_preview += "\n... (обрезано)"
+
+    galleries, documents = await _fetch_galleries_and_documents(tenant_id)
+
+    lines = [
+        "Промпт клиентского бота редактируется в разделе «Промпт», промпт админ-бота — в «Промпт админ-бота». Сохранение — через [SAVE_PROMPT].",
+        "",
+        "Список галерей изображений у тенанта (если в промпте бота-пользователя нет сценария для галереи — предложи добавить):",
+    ]
+    if not galleries:
+        lines.append("  (галерей пока нет)")
+    else:
+        for g in galleries:
+            lines.append(f"  — id: {g['id']}, название: {g['name']}")
+
+    lines.append("")
+    lines.append("Список документов RAG у тенанта (если в промпте нет сценария использования документов — предложи добавить):")
+    if not documents:
+        lines.append("  (документов пока нет)")
+    else:
+        for d in documents:
+            lines.append(f"  — id: {d['id']}, название: {d['name']}")
+
+    lines.append("")
+    lines.append("Текущий промпт бота-пользователя (проверь, описаны ли в нём сценарии для перечисленных галерей и документов):")
+    lines.append("---")
+    lines.append(prompt_preview or "(промпт пуст)")
+    lines.append("---")
+
+    return "\n".join(lines)
 
 
 def _strip_execute_blocks(reply: str) -> str:
     return EXECUTE_BLOCK_RE.sub("", reply).strip()
+
+
+def _strip_save_prompt_blocks(reply: str) -> str:
+    return SAVE_PROMPT_RE.sub("", reply).strip()
+
+
+async def _apply_save_prompt_blocks(db: AsyncSession, tenant_id: UUID, reply: str) -> tuple[str, bool]:
+    """
+    Ищет в reply блоки [SAVE_PROMPT]...[/SAVE_PROMPT], сохраняет содержимое в tenant.system_prompt.
+    Возвращает (reply без блоков, был ли хотя бы один сохранён).
+    """
+    saved = False
+    for m in SAVE_PROMPT_RE.finditer(reply):
+        content = (m.group(1) or "").strip()
+        if not content:
+            continue
+        tenant = await get_tenant_by_id(db, tenant_id)
+        if tenant is not None:
+            tenant.system_prompt = content
+            await db.flush()
+            saved = True
+    cleaned = _strip_save_prompt_blocks(reply)
+    return cleaned, saved
+
+
+def _extract_validation(reply: str) -> tuple[str, bool | None, str | None]:
+    """
+    Ищет в ответе JSON с полями validation (bool) и reason (str).
+    Возвращает (reply_для_показа, validation, reason).
+    Если JSON найден и был основным содержимым — заменяем его на читаемое сообщение.
+    """
+    reply_clean = reply.strip()
+    validation: bool | None = None
+    reason: str | None = None
+
+    # Пробуем распарсить весь ответ как JSON
+    try:
+        obj = json.loads(reply_clean)
+        if isinstance(obj, dict) and "validation" in obj:
+            validation = bool(obj["validation"])
+            reason = str(obj.get("reason") or "").strip() or None
+            reply_clean = (
+                ("Промпт требует доработки: " + reason) if not validation and reason
+                else ("Валидация пройдена. " + (reason or "")) if validation else reply_clean
+            )
+            return reply_clean, validation, reason
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Ищем JSON-объект в тексте (первое вхождение { ... "validation" ... })
+    pattern = re.compile(
+        r'\{\s*"validation"\s*:\s*(true|false)\s*,\s*"reason"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}',
+        re.IGNORECASE | re.DOTALL,
+    )
+    m = pattern.search(reply_clean)
+    if m:
+        validation = m.group(1).lower() == "true"
+        reason = m.group(2).replace("\\\"", '"').strip() or None
+        # Убираем сырой JSON из показа, оставляем остальной текст или подставляем сообщение
+        before = reply_clean[: m.start()].strip()
+        after = reply_clean[m.end() :].strip()
+        summary = ("Промпт требует доработки: " + reason) if not validation and reason else ("Валидация пройдена. " + (reason or "")) if validation else ""
+        parts = [p for p in (before, summary, after) if p]
+        reply_clean = "\n\n".join(parts) if parts else (summary or reply_clean)
+
+    return reply_clean, validation, reason
 
 
 async def handle_admin_message(
@@ -51,7 +188,7 @@ async def handle_admin_message(
     if not text:
         return "Напишите, чем могу помочь: настроить промпт бота для клиентов?"
 
-    state = _build_state()
+    state = await _build_state(db, tenant_id)
     system_prompt = await _get_admin_prompt_assembled(db, tenant_id)
     system_with_state = system_prompt.rstrip() + "\n\n---\n" + state
 
@@ -65,4 +202,17 @@ async def handle_admin_message(
 
     reply = await chat_once(system_with_state, messages)
     reply = (reply or "").strip()
-    return _strip_execute_blocks(reply) or "Готово."
+    reply = _strip_execute_blocks(reply)
+    reply, saved = await _apply_save_prompt_blocks(db, tenant_id, reply)
+    reply = reply.strip()
+    if saved:
+        reply = (reply + "\n\n✓ Промпт сохранён.") if reply else "✓ Промпт сохранён."
+
+    reply, validation, validation_reason = _extract_validation(reply)
+    reply = reply.strip() or "Готово."
+
+    return {
+        "reply": reply,
+        "validation": validation,
+        "validation_reason": validation_reason,
+    }

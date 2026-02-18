@@ -148,3 +148,5 @@ class AdminChatRequest(BaseModel):
 
 class AdminChatResponse(BaseModel):
     reply: str
+    validation: bool | None = None  # результат валидации промпта (true — ок, false — нужна доработка)
+    validation_reason: str | None = None

@@ -84,8 +84,13 @@
       box-shadow: 0 4px 24px rgba(0,0,0,0.3); transition: background 0.2s, box-shadow 0.2s;
     }
     .admin-chat-toggler:hover { background: var(--accent); color: #fff; box-shadow: 0 4px 20px rgba(88,166,255,0.35); }
+    .admin-chat-toggler.needs-attention { border-color: #e74c3c; background: rgba(231,76,60,0.2); color: #e74c3c; }
+    .admin-chat-toggler.needs-attention:hover { background: #e74c3c; color: #fff; box-shadow: 0 4px 20px rgba(231,76,60,0.4); }
+    .admin-chat-toggler-wrap { position: fixed; bottom: 24px; right: 24px; z-index: 1000; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: calc(100vw - 48px); }
+    .admin-chat-validation-badge { padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; background: rgba(231,76,60,0.95); color: #fff; box-shadow: 0 2px 12px rgba(231,76,60,0.4); animation: adminBadgePulse 2s ease-in-out infinite; max-width: 320px; text-align: right; }
+    @keyframes adminBadgePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.9; transform: scale(1.02); } }
     .admin-chat-popup {
-      position: fixed; right: 24px; bottom: 72px; width: 800px; max-width: calc(100vw - 48px); height: 720px; max-height: 85vh; z-index: 1001;
+      position: fixed; right: 24px; bottom: 96px; width: 800px; max-width: calc(100vw - 48px); height: 720px; max-height: 85vh; z-index: 1001;
       background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
       display: none; flex-direction: column; overflow: hidden;
     }
@@ -208,7 +213,10 @@
     <span id="authLinks"></span>
   </nav>
   <div id="content"></div>
-  <button type="button" id="adminChatToggler" class="admin-chat-toggler" aria-label="Админ-чат">Админ-чат</button>
+  <div class="admin-chat-toggler-wrap">
+    <span id="adminChatValidationBadge" class="admin-chat-validation-badge" style="display: none;" aria-live="polite"></span>
+    <button type="button" id="adminChatToggler" class="admin-chat-toggler" aria-label="Админ-чат">Админ-чат</button>
+  </div>
   <div id="adminChatPopup" class="admin-chat-popup">
     <div class="admin-chat-popup-header">Помощник по промпту <button type="button" class="close-btn" id="adminChatClose" aria-label="Закрыть">×</button></div>
     <div class="chat-log" id="adminChatLog"></div>
@@ -374,15 +382,39 @@
       async function loadUserPrompt() {
         if (!requireAuth()) return;
         await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/prompt', { headers: headers() });
-        if (!r.ok) {
+        const [rPrompt, rGallery, rRag] = await Promise.all([
+          fetch(base + '/' + tenantId + '/me/prompt', { headers: headers() }),
+          fetch(base + '/' + tenantId + '/me/gallery/groups', { headers: headers() }),
+          fetch(base + '/' + tenantId + '/me/rag/documents', { headers: headers() })
+        ]);
+        if (!rPrompt.ok) {
           document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки. Войдите в кабинет.</p>';
           return;
         }
-        const data = await r.json();
+        const data = await rPrompt.json();
         const systemEsc = (data.system_prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        var galleries = [];
+        var documents = [];
+        if (rGallery.ok) { try { var gList = await rGallery.json(); galleries = Array.isArray(gList) ? gList : (gList.items || gList.groups || []); } catch (_) {} }
+        if (rRag.ok) { try { var dList = await rRag.json(); documents = Array.isArray(dList) ? dList : (dList.items || dList.documents || []); } catch (_) {} }
+
         let html = '<h2>Промпт чат-бота</h2>';
         html += '<p class="hint">Единый системный промпт бота для клиентов. Если пусто — используется промпт из файла по умолчанию.</p>';
+
+        html += '<div class="panel prompt-context-info" style="margin-bottom:1rem;">';
+        html += '<h3 style="margin-top:0;font-size:0.95rem;">Галереи и документы (в том же виде передаются в контекст Админ-чата)</h3>';
+        html += '<p class="hint" style="margin-bottom:0.75rem;">Опишите в промпте сценарии использования галерей и документов (LIST_GALLERIES, SHOW_GALLERY, RAG_LIST_DOCUMENTS, RAG_GET_DOCUMENT, RAG_SEARCH), чтобы бот мог их показывать клиентам.</p>';
+        html += '<div class="prompt-context-lists">';
+        html += '<div><strong>Галереи:</strong> ';
+        if (galleries.length === 0) html += 'нет галерей';
+        else html += galleries.map(function(g) { return 'id: ' + escapeHtml(g.id || '') + ', название: ' + escapeHtml((g.name || g.title || 'Без названия')); }).join('; ');
+        html += '</div>';
+        html += '<div style="margin-top:0.5rem;"><strong>Документы RAG:</strong> ';
+        if (documents.length === 0) html += 'нет документов';
+        else html += documents.map(function(d) { return 'id: ' + escapeHtml(d.id || '') + ', название: ' + escapeHtml((d.name || d.title || d.filename || 'Без названия')); }).join('; ');
+        html += '</div>';
+        html += '</div></div>';
+
         html += '<div class="admin-prompt-system">';
         html += '<label>Системный промпт</label>';
         html += '<textarea id="userSystemPrompt" placeholder="Опишите роль агента, бизнес-цель и ключевые правила...">' + systemEsc + '</textarea>';
@@ -452,6 +484,22 @@
       let adminChatInited = false;
       const adminChatHistory = [];
 
+      function updateAdminChatValidationUI(data) {
+        var toggler = document.getElementById('adminChatToggler');
+        var badge = document.getElementById('adminChatValidationBadge');
+        if (!toggler || !badge) return;
+        if (data && typeof data.validation === 'boolean') {
+          if (data.validation === false) {
+            toggler.classList.add('needs-attention');
+            badge.textContent = data.validation_reason ? 'Промпт требует доработки: ' + data.validation_reason : 'Промпт требует доработки';
+            badge.style.display = '';
+          } else {
+            toggler.classList.remove('needs-attention');
+            badge.style.display = 'none';
+          }
+        }
+      }
+
       function initAdminChatOnce() {
         if (adminChatInited) return;
         const log = document.getElementById('adminChatLog');
@@ -490,6 +538,7 @@
               appendAdminMsg('assistant', reply);
               adminChatHistory.push({ role: 'assistant', content: reply });
             }
+            updateAdminChatValidationUI(data);
           } catch (e) {
             var loadingNode2 = document.getElementById('adminChatLoadingMsg');
             if (loadingNode2 && loadingNode2.parentNode) loadingNode2.remove();
@@ -532,6 +581,7 @@
             const reply = data.reply || '';
             appendAdminMsg('assistant', reply);
             adminChatHistory.push({ role: 'assistant', content: reply });
+            updateAdminChatValidationUI(data);
           } catch (e) {
             var loadingNode2 = document.getElementById('adminChatLoadingMsg');
             if (loadingNode2 && loadingNode2.parentNode) loadingNode2.remove();

@@ -658,7 +658,11 @@ async def admin_chat(
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     history = [{"role": m.role, "content": m.content} for m in body.history]
-    reply = await handle_admin_message(
+    result = await handle_admin_message(
         db, tenant_id, user_id, body.message.strip(), history=history
     )
-    return AdminChatResponse(reply=reply)
+    return AdminChatResponse(
+        reply=result["reply"],
+        validation=result.get("validation"),
+        validation_reason=result.get("validation_reason"),
+    )
