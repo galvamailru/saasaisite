@@ -531,7 +531,6 @@
         (async function sendInitialAndShowReply() {
           const initMsg = 'Начало сеанса. Промпт бота для клиентов редактируется в разделе «Промпт», промпт админ-бота — в «Промпт админ-бота». Задай первый или следующий вопрос по настройке промпта (роль, стиль, ограничения). Не приветствуй и не представляйся — только один вопрос или предложение.';
           if (!tenantId) await ensureTenant();
-          appendAdminMsg('user', initMsg);
           adminChatHistory.push({ role: 'user', content: initMsg });
           var loadingEl = document.createElement('div');
           loadingEl.className = 'chat-msg assistant loading';
