@@ -144,6 +144,7 @@ class ChatMessage(BaseModel):
 class AdminChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4096)
     history: list[ChatMessage] = Field(default_factory=list, max_length=30)
+    session_id: str | None = None  # идентификатор сессии; если нет — создаётся новая сессия (новый файл лога)
 
 
 class AdminChatResponse(BaseModel):
@@ -151,3 +152,4 @@ class AdminChatResponse(BaseModel):
     validation: bool | None = None  # результат валидации промпта (true — ок, false — нужна доработка)
     validation_reason: str | None = None
     prompt_saved: bool = False  # True, если в этом ответе промпт бота-пользователя был сохранён через [SAVE_PROMPT]
+    session_id: str | None = None  # идентификатор сессии (передаётся при создании новой сессии для последующих запросов)

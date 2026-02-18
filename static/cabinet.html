@@ -508,6 +508,7 @@
 
       let adminChatInited = false;
       const adminChatHistory = [];
+      let adminChatSessionId = null;
 
       function initAdminChatOnce() {
         if (adminChatInited) return;
@@ -542,7 +543,7 @@
             const res = await fetch(base + '/' + tenantId + '/admin/chat', {
               method: 'POST',
               headers: headers(true),
-              body: JSON.stringify({ message: initMsg, history: [] })
+              body: JSON.stringify({ message: initMsg, history: [], session_id: adminChatSessionId })
             });
             var loadingNode = document.getElementById('adminChatLoadingMsg');
             if (loadingNode && loadingNode.parentNode) loadingNode.remove();
@@ -586,7 +587,7 @@
             const res = await fetch(base + '/' + tenantId + '/admin/chat', {
               method: 'POST',
               headers: headers(true),
-              body: JSON.stringify({ message: msg, history: adminChatHistory.slice(0, -1) })
+              body: JSON.stringify({ message: msg, history: adminChatHistory.slice(0, -1), session_id: adminChatSessionId })
             });
             var loadingNode = document.getElementById('adminChatLoadingMsg');
             if (loadingNode && loadingNode.parentNode) loadingNode.remove();
@@ -606,6 +607,7 @@
             }
             appendAdminMsg('assistant', reply);
             adminChatHistory.push({ role: 'assistant', content: reply });
+            if (data.session_id) adminChatSessionId = data.session_id;
           } catch (e) {
             var loadingNode2 = document.getElementById('adminChatLoadingMsg');
             if (loadingNode2 && loadingNode2.parentNode) loadingNode2.remove();
@@ -632,6 +634,7 @@
       });
       document.getElementById('adminChatClose').addEventListener('click', function() {
         document.body.classList.remove('show-admin-chat');
+        adminChatSessionId = null;
       });
 
       function escapeHtml(s) {

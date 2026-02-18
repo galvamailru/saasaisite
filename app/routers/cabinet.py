@@ -1,6 +1,6 @@
 """Cabinet: только для зарегистрированных (JWT). Диалоги, чанки промпта, вставка на сайт, админ-чат, галерея, RAG, профиль."""
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -41,6 +41,7 @@ from app.models import SavedItem
 from app.services.prompt_loader import load_prompt, load_admin_prompt
 from app.services.admin_prompt_service import get_admin_system_prompt, set_admin_system_prompt
 from app.services.admin_chat_service import handle_admin_message
+from app.services.admin_chat_logger import append_admin_chat_exchange
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["cabinet"])
 
@@ -657,13 +658,23 @@ async def admin_chat(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
+    session_id = body.session_id or str(uuid4())
     history = [{"role": m.role, "content": m.content} for m in body.history]
     result = await handle_admin_message(
         db, tenant_id, user_id, body.message.strip(), history=history
     )
+    reply_text = result["reply"]
+    append_admin_chat_exchange(
+        tenant_id,
+        session_id,
+        body.message.strip(),
+        reply_text,
+        is_new_session=not body.history,
+    )
     return AdminChatResponse(
-        reply=result["reply"],
+        reply=reply_text,
         validation=result.get("validation"),
         validation_reason=result.get("validation_reason"),
         prompt_saved=result.get("prompt_saved", False),
+        session_id=session_id,
     )

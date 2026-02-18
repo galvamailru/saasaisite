@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     minio_bucket: str = "cip-files"
     minio_secure: bool = False
 
+    # Логи диалогов админ-бота (каждая сессия — отдельный файл)
+    admin_chat_log_dir: str = "logs/admin_chat"
+
     def get_prompt_path(self, base_dir: Path | None = None) -> Path:
         p = Path(self.prompt_file)
         if not p.is_absolute():
