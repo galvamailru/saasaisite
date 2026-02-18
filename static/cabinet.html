@@ -101,6 +101,7 @@
     .admin-chat-popup .chat-log { flex: 1; min-height: 280px; max-height: 600px; background: var(--bg); padding: 0.75rem; overflow-y: auto; }
     .admin-chat-popup .chat-msg.loading { color: var(--text-muted); font-style: italic; }
     .admin-chat-popup .chat-msg.loading::after { content: '...'; animation: adminChatDots 1s steps(4, end) infinite; }
+    .admin-chat-popup .chat-msg.saved-notice { background: rgba(63,185,80,0.2); border: 1px solid var(--success); border-radius: 6px; padding: 0.5rem 0.75rem; color: var(--success); font-weight: 600; }
     @keyframes adminChatDots { 0%, 20% { content: '.'; } 40% { content: '..'; } 60%, 100% { content: '...'; } }
     .admin-chat-popup .chat-input { margin: 0; padding: 8px; border-top: 1px solid var(--border); background: var(--surface); }
     .admin-chat-popup .chat-input textarea { background: var(--bg); border: 1px solid var(--border); color: var(--text); }
@@ -421,7 +422,12 @@
         html += '<button type="button" id="restoreUserPromptDefault">Восстановить из файла</button></div>';
         html += '</div>';
         document.getElementById('content').innerHTML = html;
-        document.getElementById('userSystemPrompt').value = (data.system_prompt != null ? data.system_prompt : '');
+        (function setUserPromptValue() {
+          var el = document.getElementById('userSystemPrompt');
+          var val = (data.system_prompt != null && data.system_prompt !== undefined) ? String(data.system_prompt) : '';
+          if (el) el.value = val;
+          else setTimeout(setUserPromptValue, 50);
+        })();
 
         document.getElementById('saveUserPrompt').addEventListener('click', async () => {
           const text = document.getElementById('userSystemPrompt').value;
@@ -460,7 +466,12 @@
         html += '<button type="button" id="restoreAdminPromptDefault">Восстановить из файла</button></div>';
         html += '</div>';
         document.getElementById('content').innerHTML = html;
-        document.getElementById('adminSystemPrompt').value = (promptData.system_prompt != null ? promptData.system_prompt : '');
+        (function setAdminPromptValue() {
+          var el = document.getElementById('adminSystemPrompt');
+          var val = (promptData.system_prompt != null && promptData.system_prompt !== undefined) ? String(promptData.system_prompt) : '';
+          if (el) el.value = val;
+          else setTimeout(setAdminPromptValue, 50);
+        })();
 
         document.getElementById('saveAdminSystemPrompt').addEventListener('click', async () => {
           const text = document.getElementById('adminSystemPrompt').value;
@@ -534,6 +545,12 @@
             if (loadingNode && loadingNode.parentNode) loadingNode.remove();
             const data = res.ok ? await res.json() : null;
             const reply = (data && data.reply) ? data.reply : (res.ok ? '' : 'Ошибка загрузки. Попробуйте написать сообщение.');
+            if (data && data.prompt_saved) {
+              var savedDiv = document.createElement('div');
+              savedDiv.className = 'chat-msg saved-notice';
+              savedDiv.textContent = '✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт».';
+              log.appendChild(savedDiv);
+            }
             if (reply) {
               appendAdminMsg('assistant', reply);
               adminChatHistory.push({ role: 'assistant', content: reply });
@@ -579,6 +596,12 @@
             }
             const data = await res.json();
             const reply = data.reply || '';
+            if (data.prompt_saved) {
+              var savedDiv = document.createElement('div');
+              savedDiv.className = 'chat-msg saved-notice';
+              savedDiv.textContent = '✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт».';
+              log.appendChild(savedDiv);
+            }
             appendAdminMsg('assistant', reply);
             adminChatHistory.push({ role: 'assistant', content: reply });
             updateAdminChatValidationUI(data);

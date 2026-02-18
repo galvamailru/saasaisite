@@ -150,3 +150,4 @@ class AdminChatResponse(BaseModel):
     reply: str
     validation: bool | None = None  # результат валидации промпта (true — ок, false — нужна доработка)
     validation_reason: str | None = None
+    prompt_saved: bool = False  # True, если в этом ответе промпт бота-пользователя был сохранён через [SAVE_PROMPT]

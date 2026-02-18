@@ -84,7 +84,7 @@ async def serve_cabinet(slug: str, path: str = "", db: AsyncSession = Depends(ge
     cabinet_path = STATIC_DIR / "cabinet.html"
     if not cabinet_path.exists():
         raise HTTPException(status_code=404, detail="cabinet page not found")
-    return FileResponse(cabinet_path)
+    return FileResponse(cabinet_path, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
 @app.get("/{slug}/register")

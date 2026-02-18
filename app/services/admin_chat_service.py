@@ -213,6 +213,12 @@ def _extract_validation(reply: str) -> tuple[str, bool | None, str | None]:
         parts = [p for p in (before, summary, after) if p]
         reply_clean = "\n\n".join(parts) if parts else (summary or reply_clean)
 
+    # 5) Fallback: в тексте есть "validation": false — считаем валидацию не пройденной
+    if validation is None and ('"validation": false' in reply_clean.lower() or '"validation":false' in reply_clean.lower()):
+        validation = False
+        reason_m = re.search(r'"reason"\s*:\s*"([^"]*)"', reply_clean)
+        reason = reason_m.group(1).strip() if reason_m else None
+
     return reply_clean, validation, reason
 
 
@@ -259,4 +265,5 @@ async def handle_admin_message(
         "reply": reply,
         "validation": validation,
         "validation_reason": validation_reason,
+        "prompt_saved": saved,
     }

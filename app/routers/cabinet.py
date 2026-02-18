@@ -665,4 +665,5 @@ async def admin_chat(
         reply=result["reply"],
         validation=result.get("validation"),
         validation_reason=result.get("validation_reason"),
+        prompt_saved=result.get("prompt_saved", False),
     )
