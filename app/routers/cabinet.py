@@ -303,6 +303,36 @@ async def update_user_profile(
     )
 
 
+# Промпт пользовательского бота (единый системный промпт): текущее значение и обновление
+@router.get("/{tenant_id:uuid}/me/prompt", response_model=AdminPromptResponse)
+async def get_user_prompt(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    system_prompt = getattr(tenant, "system_prompt", None) or None
+    return AdminPromptResponse(system_prompt=system_prompt)
+
+
+@router.patch("/{tenant_id:uuid}/me/prompt", response_model=AdminPromptResponse)
+async def patch_user_prompt(
+    tenant_id: UUID,
+    body: AdminPromptUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    if body.system_prompt is not None:
+        tenant.system_prompt = (body.system_prompt or "").strip() or None
+    await db.flush()
+    return AdminPromptResponse(system_prompt=tenant.system_prompt)
+
+
 # Промпт пользовательского бота: значение по умолчанию из файла (для кнопки «Восстановить из файла»)
 @router.get("/{tenant_id:uuid}/me/prompt/default", response_model=AdminPromptResponse)
 async def get_user_prompt_default(

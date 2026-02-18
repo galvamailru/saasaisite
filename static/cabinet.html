@@ -85,7 +85,7 @@
     }
     .admin-chat-toggler:hover { background: var(--accent); color: #fff; box-shadow: 0 4px 20px rgba(88,166,255,0.35); }
     .admin-chat-popup {
-      position: fixed; right: 24px; bottom: 72px; width: 400px; max-width: calc(100vw - 48px); max-height: 70vh; z-index: 1001;
+      position: fixed; right: 24px; bottom: 72px; width: 800px; max-width: calc(100vw - 48px); height: 720px; max-height: 85vh; z-index: 1001;
       background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
       display: none; flex-direction: column; overflow: hidden;
     }
@@ -93,7 +93,10 @@
     .admin-chat-popup-header { padding: 10px 14px; background: var(--bg); border-bottom: 1px solid var(--border); color: var(--text); font-weight: 600; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
     .admin-chat-popup-header .close-btn { background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; line-height: 1; padding: 0 4px; }
     .admin-chat-popup-header .close-btn:hover { color: var(--text); }
-    .admin-chat-popup .chat-log { flex: 1; min-height: 200px; max-height: 360px; background: var(--bg); padding: 0.75rem; overflow-y: auto; }
+    .admin-chat-popup .chat-log { flex: 1; min-height: 280px; max-height: 600px; background: var(--bg); padding: 0.75rem; overflow-y: auto; }
+    .admin-chat-popup .chat-msg.loading { color: var(--text-muted); font-style: italic; }
+    .admin-chat-popup .chat-msg.loading::after { content: '...'; animation: adminChatDots 1s steps(4, end) infinite; }
+    @keyframes adminChatDots { 0%, 20% { content: '.'; } 40% { content: '..'; } 60%, 100% { content: '...'; } }
     .admin-chat-popup .chat-input { margin: 0; padding: 8px; border-top: 1px solid var(--border); background: var(--surface); }
     .admin-chat-popup .chat-input textarea { background: var(--bg); border: 1px solid var(--border); color: var(--text); }
     .chat-log { max-height: 400px; overflow-y: auto; border: 1px solid var(--border); padding: 0.75rem; margin-bottom: 0.5rem; background: var(--bg); border-radius: 6px; }
@@ -196,6 +199,7 @@
   <nav>
     <a href="#" data-page="my">Главная</a>
     <a href="#" data-page="dialogs">Диалоги</a>
+    <a href="#" data-page="prompt">Промпт</a>
     <a href="#" data-page="admin-prompt">Промпт админ-бота</a>
     <a href="#" data-page="gallery">Галерея</a>
     <a href="#" data-page="rag">Документы</a>
@@ -367,6 +371,45 @@
         document.getElementById('content').innerHTML = html;
       }
 
+      async function loadUserPrompt() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/prompt', { headers: headers() });
+        if (!r.ok) {
+          document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки. Войдите в кабинет.</p>';
+          return;
+        }
+        const data = await r.json();
+        const systemEsc = (data.system_prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        let html = '<h2>Промпт чат-бота</h2>';
+        html += '<p class="hint">Единый системный промпт бота для клиентов. Если пусто — используется промпт из файла по умолчанию.</p>';
+        html += '<div class="admin-prompt-system">';
+        html += '<label>Системный промпт</label>';
+        html += '<textarea id="userSystemPrompt" placeholder="Опишите роль агента, бизнес-цель и ключевые правила...">' + systemEsc + '</textarea>';
+        html += '<div style="margin-top:0.5rem;"><button type="button" id="saveUserPrompt">Сохранить</button> ';
+        html += '<button type="button" id="restoreUserPromptDefault">Восстановить из файла</button></div>';
+        html += '</div>';
+        document.getElementById('content').innerHTML = html;
+
+        document.getElementById('saveUserPrompt').addEventListener('click', async () => {
+          const text = document.getElementById('userSystemPrompt').value;
+          const res = await fetch(base + '/' + tenantId + '/me/prompt', {
+            method: 'PATCH',
+            headers: headers(true),
+            body: JSON.stringify({ system_prompt: text })
+          });
+          if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
+          alert('Промпт сохранён.');
+        });
+
+        document.getElementById('restoreUserPromptDefault').addEventListener('click', async () => {
+          const rDef = await fetch(base + '/' + tenantId + '/me/prompt/default', { headers: headers() });
+          if (!rDef.ok) { const j = await rDef.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
+          const defData = await rDef.json();
+          document.getElementById('userSystemPrompt').value = defData.system_prompt || '';
+        });
+      }
+
       async function loadAdminPrompt() {
         if (!requireAuth()) return;
         await ensureTenant();
@@ -423,15 +466,24 @@
           log.scrollTop = log.scrollHeight;
         }
         (async function sendInitialAndShowReply() {
-          const initMsg = 'Начало сеанса. Промпт бота редактируется в разделах «Профиль» и «Промпт админ-бота». Задай первый или следующий вопрос по настройке промпта (роль, стиль, ограничения). Не приветствуй и не представляйся — только один вопрос или предложение.';
+          const initMsg = 'Начало сеанса. Промпт бота для клиентов редактируется в разделе «Промпт», промпт админ-бота — в «Промпт админ-бота». Задай первый или следующий вопрос по настройке промпта (роль, стиль, ограничения). Не приветствуй и не представляйся — только один вопрос или предложение.';
           if (!tenantId) await ensureTenant();
+          appendAdminMsg('user', initMsg);
           adminChatHistory.push({ role: 'user', content: initMsg });
+          var loadingEl = document.createElement('div');
+          loadingEl.className = 'chat-msg assistant loading';
+          loadingEl.id = 'adminChatLoadingMsg';
+          loadingEl.textContent = 'Думаю';
+          log.appendChild(loadingEl);
+          log.scrollTop = log.scrollHeight;
           try {
             const res = await fetch(base + '/' + tenantId + '/admin/chat', {
               method: 'POST',
               headers: headers(true),
               body: JSON.stringify({ message: initMsg, history: [] })
             });
+            var loadingNode = document.getElementById('adminChatLoadingMsg');
+            if (loadingNode && loadingNode.parentNode) loadingNode.remove();
             const data = res.ok ? await res.json() : null;
             const reply = (data && data.reply) ? data.reply : (res.ok ? '' : 'Ошибка загрузки. Попробуйте написать сообщение.');
             if (reply) {
@@ -439,8 +491,12 @@
               adminChatHistory.push({ role: 'assistant', content: reply });
             }
           } catch (e) {
+            var loadingNode2 = document.getElementById('adminChatLoadingMsg');
+            if (loadingNode2 && loadingNode2.parentNode) loadingNode2.remove();
             appendAdminMsg('assistant', 'Ошибка: ' + (e.message || 'сеть'));
             adminChatHistory.push({ role: 'assistant', content: 'Ошибка: ' + (e.message || 'сеть') });
+          } finally {
+            log.scrollTop = log.scrollHeight;
           }
         })();
         send.addEventListener('click', async () => {
@@ -450,21 +506,42 @@
           input.value = '';
           appendAdminMsg('user', msg);
           adminChatHistory.push({ role: 'user', content: msg });
-          const res = await fetch(base + '/' + tenantId + '/admin/chat', {
-            method: 'POST',
-            headers: headers(true),
-            body: JSON.stringify({ message: msg, history: adminChatHistory.slice(0, -1) })
-          });
-          if (!res.ok) {
-            const errText = await res.text();
-            appendAdminMsg('assistant', 'Ошибка: ' + errText);
-            adminChatHistory.push({ role: 'assistant', content: 'Ошибка: ' + errText });
-            return;
+          var loadingEl = document.createElement('div');
+          loadingEl.className = 'chat-msg assistant loading';
+          loadingEl.id = 'adminChatLoadingMsg';
+          loadingEl.textContent = 'Думаю';
+          log.appendChild(loadingEl);
+          log.scrollTop = log.scrollHeight;
+          send.disabled = true;
+          input.disabled = true;
+          try {
+            const res = await fetch(base + '/' + tenantId + '/admin/chat', {
+              method: 'POST',
+              headers: headers(true),
+              body: JSON.stringify({ message: msg, history: adminChatHistory.slice(0, -1) })
+            });
+            var loadingNode = document.getElementById('adminChatLoadingMsg');
+            if (loadingNode && loadingNode.parentNode) loadingNode.remove();
+            if (!res.ok) {
+              const errText = await res.text();
+              appendAdminMsg('assistant', 'Ошибка: ' + errText);
+              adminChatHistory.push({ role: 'assistant', content: 'Ошибка: ' + errText });
+              return;
+            }
+            const data = await res.json();
+            const reply = data.reply || '';
+            appendAdminMsg('assistant', reply);
+            adminChatHistory.push({ role: 'assistant', content: reply });
+          } catch (e) {
+            var loadingNode2 = document.getElementById('adminChatLoadingMsg');
+            if (loadingNode2 && loadingNode2.parentNode) loadingNode2.remove();
+            appendAdminMsg('assistant', 'Ошибка: ' + (e.message || 'сеть'));
+            adminChatHistory.push({ role: 'assistant', content: 'Ошибка: ' + (e.message || 'сеть') });
+          } finally {
+            send.disabled = false;
+            input.disabled = false;
+            log.scrollTop = log.scrollHeight;
           }
-          const data = await res.json();
-          const reply = data.reply || '';
-          appendAdminMsg('assistant', reply);
-          adminChatHistory.push({ role: 'assistant', content: reply });
         });
         adminChatInited = true;
       }
@@ -766,33 +843,22 @@
           return;
         }
         const p = await r.json();
-        const sysEsc = (p.system_prompt || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         let html = '<h2>Профиль</h2>';
-        html += '<p class="hint">Имя, контакт и единый системный промпт клиентского бота. Можно восстановить промпт из файла по умолчанию.</p>';
+        html += '<p class="hint">Имя и контакт. Системный промпт бота для клиентов редактируется в разделе <a href="#" data-goto="prompt">Промпт</a>.</p>';
         html += '<form id="profileForm" class="panel">';
         html += '<p><strong>user_id:</strong> ' + (p.user_id || '') + '</p>';
         html += '<label>Имя (отображается в кабинете)<br><input type="text" id="profileDisplayName" value="' + (p.display_name || '') + '" maxlength="256"></label>';
         html += '<label>Контакт (email/телефон/мессенджер)<br><input type="text" id="profileContact" value="' + (p.contact || '') + '" maxlength="256"></label>';
-        html += '<label>Системный промпт клиентского бота<br><textarea id="profileSystemPrompt" rows="10" spellcheck="false" placeholder="Опишите роль агента, бизнес-цель и ключевые правила.">' + sysEsc + '</textarea></label>';
-        html += '<div style="margin-top:0.5rem;"><button type="button" id="restoreUserPromptDefault">Восстановить промпт из файла</button></div>';
         html += '<div style="margin-top:1rem;"><button type="submit">Сохранить профиль</button></div>';
         html += '</form>';
         document.getElementById('content').innerHTML = html;
-
-        document.getElementById('restoreUserPromptDefault').addEventListener('click', async () => {
-          const rDef = await fetch(base + '/' + tenantId + '/me/prompt/default', { headers: headers() });
-          if (!rDef.ok) { const j = await rDef.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
-          const data = await rDef.json();
-          document.getElementById('profileSystemPrompt').value = data.system_prompt || '';
-        });
 
         const form = document.getElementById('profileForm');
         form.addEventListener('submit', async function(e) {
           e.preventDefault();
           const body = {
             display_name: document.getElementById('profileDisplayName').value.trim() || null,
-            contact: document.getElementById('profileContact').value.trim() || null,
-            system_prompt: document.getElementById('profileSystemPrompt').value
+            contact: document.getElementById('profileContact').value.trim() || null
           };
           const res = await fetch(base + '/' + tenantId + '/me/profile', {
             method: 'PATCH',
@@ -864,6 +930,7 @@
         if (page === 'my' || page === 'embed') loadMy();
         else if (page === 'dialogs' && segs[3]) loadDialogDetail(segs[3]);
         else if (page === 'dialogs') loadDialogs();
+        else if (page === 'prompt') loadUserPrompt();
         else if (page === 'admin-prompt') loadAdminPrompt();
         else if (page === 'gallery' && segs[3]) loadGalleryGroup(segs[3]);
         else if (page === 'gallery') loadGallery();
