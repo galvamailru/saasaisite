@@ -663,12 +663,31 @@ async def admin_chat(
     result = await handle_admin_message(
         db, tenant_id, user_id, body.message.strip(), history=history
     )
+    if isinstance(result, str):
+        reply_text = result
+        return AdminChatResponse(
+            reply=reply_text,
+            validation=None,
+            validation_reason=None,
+            prompt_saved=False,
+            session_id=session_id,
+        )
     reply_text = result["reply"]
+    # Лог: что ушло в DeepSeek и что вернулось (сырой ответ до постобработки)
+    request_system = result.get("request_system") or ""
+    request_messages = result.get("request_messages") or []
+    request_to_llm_parts = ["[system]\n", request_system, "\n\n[messages]\n"]
+    for m in request_messages:
+        role = m.get("role", "")
+        content = (m.get("content") or "").strip()
+        request_to_llm_parts.append(f"{role}:\n{content}\n")
+    request_to_llm = "".join(request_to_llm_parts)
+    raw_reply = result.get("raw_reply") or ""
     append_admin_chat_exchange(
         tenant_id,
         session_id,
-        body.message.strip(),
-        reply_text,
+        request_to_llm,
+        raw_reply,
         is_new_session=not body.history,
     )
     return AdminChatResponse(

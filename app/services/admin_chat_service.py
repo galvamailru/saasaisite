@@ -250,8 +250,8 @@ async def handle_admin_message(
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": text})
 
-    reply = await chat_once(system_with_state, messages)
-    reply = (reply or "").strip()
+    raw_reply = (await chat_once(system_with_state, messages) or "").strip()
+    reply = raw_reply
     reply = _strip_execute_blocks(reply)
     reply, saved = await _apply_save_prompt_blocks(db, tenant_id, reply)
     reply = reply.strip()
@@ -267,4 +267,7 @@ async def handle_admin_message(
         "validation": validation,
         "validation_reason": validation_reason,
         "prompt_saved": saved,
+        "raw_reply": raw_reply,
+        "request_system": system_with_state,
+        "request_messages": messages,
     }

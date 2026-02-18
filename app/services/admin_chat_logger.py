@@ -1,5 +1,5 @@
 """Логирование диалогов админ-бота в файлы: одна сессия — один файл.
-Формат: вопрос пользователя, строка из символов #, ответ бота."""
+В лог пишется то, что отправляется в DeepSeek (запрос), и сырой ответ от API (до постобработки)."""
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -26,20 +26,25 @@ def _session_log_path(tenant_id: UUID, session_id: str) -> Path:
 def append_admin_chat_exchange(
     tenant_id: UUID,
     session_id: str,
-    user_message: str,
-    assistant_reply: str,
+    request_to_llm: str,
+    response_from_llm: str,
     *,
     is_new_session: bool = False,
 ) -> None:
     """
-    Пишет в лог-файл сессии одну пару вопрос–ответ.
+    Пишет в лог-файл сессии один обмен: запрос в DeepSeek (system + messages)
+    и сырой ответ от API (до вырезания [SAVE_PROMPT], валидации и т.д.).
     is_new_session: True для первого сообщения в сессии (добавляется заголовок).
     """
     path = _session_log_path(tenant_id, session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     block = (
-        f"user:\n{user_message}\n{SEP_LINE}\nassistant:\n{assistant_reply}\n"
+        "=== REQUEST TO DEEPSEEK ===\n"
+        f"{request_to_llm}\n"
+        f"{SEP_LINE}\n"
+        "=== RESPONSE FROM DEEPSEEK ===\n"
+        f"{response_from_llm}\n"
     )
     if is_new_session:
         header = f"tenant_id={tenant_id} session_id={session_id} started={ts}\n{SEP_LINE}\n"
