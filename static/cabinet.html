@@ -461,6 +461,7 @@
           });
           if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
           alert('Промпт сохранён.');
+          resetAdminChat();
         });
 
         document.getElementById('restoreUserPromptDefault').addEventListener('click', async () => {
@@ -514,6 +515,7 @@
           });
           if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
           alert('Системный промпт сохранён.');
+          resetAdminChat();
         });
 
         document.getElementById('restoreAdminPromptDefault').addEventListener('click', async () => {
@@ -527,6 +529,14 @@
       let adminChatInited = false;
       const adminChatHistory = [];
       let adminChatSessionId = null;
+
+      function resetAdminChat() {
+        adminChatInited = false;
+        adminChatSessionId = null;
+        adminChatHistory.length = 0;
+        var log = document.getElementById('adminChatLog');
+        if (log) log.innerHTML = '';
+      }
 
       function initAdminChatOnce() {
         if (adminChatInited) return;
@@ -545,6 +555,18 @@
           }
           log.appendChild(div);
           log.scrollTop = log.scrollHeight;
+        }
+        function stripSavedConfirmationFromReply(reply) {
+          if (!reply || !reply.trim()) return '';
+          var r = reply.trim();
+          var lines = r.split(/\n/);
+          var out = lines.filter(function(line) {
+            var t = line.trim();
+            if (!t) return true;
+            return !(/✓/.test(t) && /сохранён/i.test(t));
+          }).join('\n').trim();
+          if (out === r && /сохранён/i.test(r) && (r.length < 320)) return '';
+          return out;
         }
         (async function sendInitialAndShowReply() {
           const initMsg = 'Начало сеанса. Промпт бота для клиентов редактируется в разделе «Промпт», промпт админ-бота — в «Промпт админ-бота». Задай первый или следующий вопрос по настройке промпта (роль, стиль, ограничения). Не приветствуй и не представляйся — только один вопрос или предложение.';
@@ -571,7 +593,7 @@
               savedDiv.className = 'chat-msg saved-notice';
               savedDiv.textContent = '✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт».';
               log.appendChild(savedDiv);
-              reply = (reply || '').replace(/^\s*(?:АДМИН ПОМОЩНИК:\s*)?✓[^\n]*сохранён[^\n]*(\n|$)/gi, '').trim();
+              reply = stripSavedConfirmationFromReply(reply || '');
             }
             if ((reply || '').trim()) {
               appendAdminMsg('assistant', reply);
@@ -622,7 +644,7 @@
               savedDiv.className = 'chat-msg saved-notice';
               savedDiv.textContent = '✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт».';
               log.appendChild(savedDiv);
-              reply = (reply || '').replace(/^\s*(?:АДМИН ПОМОЩНИК:\s*)?✓[^\n]*сохранён[^\n]*(\n|$)/gi, '').trim();
+              reply = stripSavedConfirmationFromReply(reply || '');
             }
             if ((reply || '').trim()) {
               appendAdminMsg('assistant', reply);
@@ -836,6 +858,7 @@
           if (!name) { alert('Введите название'); return; }
           const res = await fetch(base + '/' + tenantId + '/me/gallery/groups', { method: 'POST', headers: headers(true), body: JSON.stringify({ tenant_id: tenantId, name: name, description: document.getElementById('galleryGroupDesc').value.trim() || null }) });
           if (!res.ok) { alert('Ошибка: ' + await res.text()); return; }
+          resetAdminChat();
           loadGallery();
         });
         document.getElementById('content').querySelectorAll('.gallery-view-group').forEach(function(btn) {
@@ -897,7 +920,7 @@
           });
           xhr.addEventListener('load', function() {
             wrap.classList.remove('active');
-            if (xhr.status >= 200 && xhr.status < 300) { statusEl.textContent = 'Добавлено.'; barEl.style.width = '100%'; input.value = ''; loadGalleryGroup(groupId); }
+            if (xhr.status >= 200 && xhr.status < 300) { statusEl.textContent = 'Добавлено.'; barEl.style.width = '100%'; input.value = ''; resetAdminChat(); loadGalleryGroup(groupId); }
             else { try { var err = JSON.parse(xhr.responseText); statusEl.textContent = ''; alert('Ошибка: ' + (err.detail || xhr.statusText)); } catch (e) { alert('Ошибка: ' + xhr.statusText); } input.value = ''; }
           });
           xhr.addEventListener('error', function() { wrap.classList.remove('active'); statusEl.textContent = ''; alert('Ошибка сети'); input.value = ''; });
@@ -973,7 +996,7 @@
                   var contentMd = document.getElementById('ragPreviewMd').value;
                   if (!contentMd) { alert('Текст не может быть пустым'); return; }
                   var saveRes = await fetch(base + '/' + tenantId + '/me/rag/documents/save', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, headers()), body: JSON.stringify({ name: name, content_md: contentMd, source_file_name: sourceFileName || null }) });
-                  if (saveRes.ok) { modal.remove(); loadRag(); }
+                  if (saveRes.ok) { modal.remove(); resetAdminChat(); loadRag(); }
                   else { alert('Ошибка сохранения: ' + await saveRes.text()); }
                 };
                 modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
