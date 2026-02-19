@@ -277,6 +277,52 @@
         return div.innerHTML;
       }
 
+      /** Допустимые теги для блоков [HTML]...[/HTML] в ответах бота. */
+      var ALLOWED_HTML_TAGS = /^(p|div|span|br|strong|b|em|i|u|ul|ol|li|a|img|table|thead|tbody|tr|td|th|h1|h2|h3|h4)$/i;
+      var HTML_BLOCK_RE = /\[HTML\]([\s\S]*?)\[\/HTML\]/gi;
+
+      function sanitizeHtmlForChat(raw) {
+        if (!raw || typeof raw !== 'string') return '';
+        var tmp = document.createElement('div');
+        tmp.innerHTML = raw.trim();
+        [].slice.call(tmp.querySelectorAll('script, iframe, form, object, embed, style')).forEach(function(el) { el.remove(); });
+        tmp.querySelectorAll('*').forEach(function(el) {
+          if (!ALLOWED_HTML_TAGS.test(el.tagName)) { el.replaceWith(document.createTextNode(el.textContent)); return; }
+          for (var i = el.attributes.length - 1; i >= 0; i--) {
+            var a = el.attributes[i];
+            if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+            else if (el.tagName === 'A' && (a.name === 'href' || a.name === 'target' || a.name === 'rel')) { /* keep */ }
+            else if (el.tagName === 'IMG' && (a.name === 'src' || a.name === 'alt' || a.name === 'loading')) { /* keep */ }
+            else if (a.name !== 'href' && a.name !== 'src' && a.name !== 'alt' && a.name !== 'target' && a.name !== 'rel' && a.name !== 'loading') el.removeAttribute(a.name);
+          }
+          if (el.tagName === 'A') { el.setAttribute('target', '_blank'); el.setAttribute('rel', 'noopener noreferrer'); }
+        });
+        return tmp.innerHTML;
+      }
+
+      /** Разбивает текст на сегменты [HTML]...[/HTML] и обычный текст; возвращает итоговый HTML для отображения. */
+      function processHtmlBlocksAndText(text, lineToHtml) {
+        var parts = [];
+        var lastIndex = 0;
+        HTML_BLOCK_RE.lastIndex = 0;
+        var m;
+        while ((m = HTML_BLOCK_RE.exec(text)) !== null) {
+          if (m.index > lastIndex) {
+            var textSegment = text.slice(lastIndex, m.index);
+            var lines = textSegment.split('\n');
+            parts.push(lines.map(function(l) { return lineToHtml(l); }).join('<br>'));
+          }
+          parts.push(sanitizeHtmlForChat(m[1]));
+          lastIndex = HTML_BLOCK_RE.lastIndex;
+        }
+        if (lastIndex < text.length) {
+          var rest = text.slice(lastIndex);
+          var lines = rest.split('\n');
+          parts.push(lines.map(function(l) { return lineToHtml(l); }).join('<br>'));
+        }
+        return parts.join('');
+      }
+
       var galleryUrlRegex = /(https?:\/\/[^\s]+\/me\/gallery\/groups\/[^\s]+\/images\/[^\s]+\/file)/gi;
 
       function isGalleryImageUrl(line) {
@@ -318,12 +364,7 @@
           files.push({ name: name.trim(), url });
           return '';
         }).trim().replace(/\n{2,}/g, '\n\n');
-        const lines = cleaned.split('\n');
-        const parts = [];
-        for (let i = 0; i < lines.length; i++) {
-          parts.push(lineToHtmlWithGalleryImgs(lines[i]));
-        }
-        let html = parts.join('<br>');
+        var html = processHtmlBlocksAndText(cleaned, lineToHtmlWithGalleryImgs);
         return { html: html || '—', files };
       }
 

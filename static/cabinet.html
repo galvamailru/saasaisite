@@ -538,9 +538,8 @@
           const div = document.createElement('div');
           div.className = 'chat-msg ' + role;
           if (role === 'assistant') {
-            var escaped = (typeof escapeHtml === 'function' ? escapeHtml(text) : String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
-            escaped = escaped.replace(/Осталось\s+(нерешенных\s+)?вопросов:?\s*\d+/gi, function(m) { return '<span class="admin-chat-unresolved-count">' + m + '</span>'; });
-            div.innerHTML = 'АДМИН ПОМОЩНИК: ' + escaped;
+            var bodyHtml = processAdminReplyForDisplay(text);
+            div.innerHTML = 'АДМИН ПОМОЩНИК: ' + (bodyHtml || '—');
           } else {
             div.textContent = 'Вы: ' + text;
           }
@@ -660,6 +659,51 @@
         const div = document.createElement('div');
         div.textContent = s;
         return div.innerHTML;
+      }
+
+      var ALLOWED_HTML_TAGS = /^(p|div|span|br|strong|b|em|i|u|ul|ol|li|a|img|table|thead|tbody|tr|td|th|h1|h2|h3|h4)$/i;
+      var HTML_BLOCK_RE = /\[HTML\]([\s\S]*?)\[\/HTML\]/gi;
+      function sanitizeHtmlForChat(raw) {
+        if (!raw || typeof raw !== 'string') return '';
+        var tmp = document.createElement('div');
+        tmp.innerHTML = raw.trim();
+        [].slice.call(tmp.querySelectorAll('script, iframe, form, object, embed, style')).forEach(function(el) { el.remove(); });
+        tmp.querySelectorAll('*').forEach(function(el) {
+          if (!ALLOWED_HTML_TAGS.test(el.tagName)) { el.replaceWith(document.createTextNode(el.textContent)); return; }
+          for (var i = el.attributes.length - 1; i >= 0; i--) {
+            var a = el.attributes[i];
+            if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+            else if (el.tagName === 'A' && (a.name === 'href' || a.name === 'target' || a.name === 'rel')) { }
+            else if (el.tagName === 'IMG' && (a.name === 'src' || a.name === 'alt' || a.name === 'loading')) { }
+            else if (a.name !== 'href' && a.name !== 'src' && a.name !== 'alt' && a.name !== 'target' && a.name !== 'rel' && a.name !== 'loading') el.removeAttribute(a.name);
+          }
+          if (el.tagName === 'A') { el.setAttribute('target', '_blank'); el.setAttribute('rel', 'noopener noreferrer'); }
+        });
+        return tmp.innerHTML;
+      }
+      function processAdminReplyForDisplay(text) {
+        if (!text || typeof text !== 'string') return '';
+        var parts = [];
+        var lastIndex = 0;
+        HTML_BLOCK_RE.lastIndex = 0;
+        var m;
+        while ((m = HTML_BLOCK_RE.exec(text)) !== null) {
+          if (m.index > lastIndex) {
+            var segment = text.slice(lastIndex, m.index);
+            segment = (typeof escapeHtml === 'function' ? escapeHtml(segment) : segment.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
+            segment = segment.replace(/Осталось\s+(нерешенных\s+)?вопросов:?\s*\d+/gi, function(match) { return '<span class="admin-chat-unresolved-count">' + match + '</span>'; });
+            parts.push(segment.replace(/\n/g, '<br>'));
+          }
+          parts.push(sanitizeHtmlForChat(m[1]));
+          lastIndex = HTML_BLOCK_RE.lastIndex;
+        }
+        if (lastIndex < text.length) {
+          var rest = text.slice(lastIndex);
+          rest = (typeof escapeHtml === 'function' ? escapeHtml(rest) : rest.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
+          rest = rest.replace(/Осталось\s+(нерешенных\s+)?вопросов:?\s*\d+/gi, function(match) { return '<span class="admin-chat-unresolved-count">' + match + '</span>'; });
+          parts.push(rest.replace(/\n/g, '<br>'));
+        }
+        return parts.join('');
       }
 
       async function loadLeads(dateFromVal, dateToVal) {
