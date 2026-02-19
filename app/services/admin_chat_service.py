@@ -259,9 +259,10 @@ async def handle_admin_message(
     reply = _strip_execute_blocks(reply)
     reply, saved = await _apply_save_prompt_blocks(db, tenant_id, reply)
     reply = reply.strip()
+    # При сохранении промпта убираем из reply текст о сохранении, чтобы не дублировать зелёную рамку на фронте
     if saved:
-        saved_msg = "✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт» — там отображается текущий текст."
-        reply = (saved_msg + "\n\n" + reply) if reply else saved_msg
+        _saved_phrase = "✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт» — там отображается текущий текст."
+        reply = reply.replace(_saved_phrase, "").strip().replace("\n\n\n", "\n\n")
 
     reply, validation, validation_reason = _extract_validation(reply)
     reply = reply.strip() or "Готово."

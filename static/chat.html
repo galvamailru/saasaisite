@@ -344,13 +344,13 @@
         return parts.join('');
       }
 
-      /** Превращает Markdown **жирный** и *курсив* в HTML (для уже экранированной строки). */
-      function markdownBoldItalicToHtml(escapedStr) {
+      /** После экранирования возвращает в разметку только безопасные инлайн-теги (strong, b, em, i). */
+      function unescapeSafeInlineTags(escapedStr) {
         return (escapedStr || '')
-          .replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>')
-          .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-          .replace(/__([\s\S]*?)__/g, '<strong>$1</strong>')
-          .replace(/_([^_]+)_/g, '<em>$1</em>');
+          .replace(/&lt;strong&gt;/gi, '<strong>').replace(/&lt;\/strong&gt;/gi, '</strong>')
+          .replace(/&lt;b&gt;/gi, '<b>').replace(/&lt;\/b&gt;/gi, '</b>')
+          .replace(/&lt;em&gt;/gi, '<em>').replace(/&lt;\/em&gt;/gi, '</em>')
+          .replace(/&lt;i&gt;/gi, '<i>').replace(/&lt;\/i&gt;/gi, '</i>');
       }
 
       var galleryUrlRegex = /(https?:\/\/[^\s]+\/me\/gallery\/groups\/[^\s]+\/images\/[^\s]+\/file)/gi;
@@ -369,9 +369,9 @@
         var parts = trimmed.split(galleryUrlRegex);
         if (parts.length === 1) {
           var escaped = escapeHtml(trimmed);
+          escaped = unescapeSafeInlineTags(escaped);
           var linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
-          var withLinks = escaped.replace(linkRegex, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
-          return markdownBoldItalicToHtml(withLinks);
+          return escaped.replace(linkRegex, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
         }
         function isGalleryUrl(s) {
           return (s || '').indexOf('/me/gallery/groups/') !== -1 && (s || '').indexOf('/images/') !== -1 && (s || '').indexOf('/file') !== -1;
@@ -382,8 +382,8 @@
             out += '<img src="' + escapeHtml(parts[i]) + '" alt="" class="chat-gallery-img" loading="lazy">';
           } else {
             var esc = escapeHtml(parts[i]);
-            var withLinks = esc.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
-            out += markdownBoldItalicToHtml(withLinks);
+            esc = unescapeSafeInlineTags(esc);
+            out += esc.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
           }
         }
         return out;

@@ -622,8 +622,12 @@
               savedDiv.textContent = '✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт».';
               log.appendChild(savedDiv);
             }
-            appendAdminMsg('assistant', reply);
-            adminChatHistory.push({ role: 'assistant', content: reply });
+            if ((reply || '').trim()) {
+              appendAdminMsg('assistant', reply);
+              adminChatHistory.push({ role: 'assistant', content: reply });
+            } else if (data.prompt_saved) {
+              adminChatHistory.push({ role: 'assistant', content: '✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт».' });
+            }
             if (data.session_id) adminChatSessionId = data.session_id;
           } catch (e) {
             var loadingNode2 = document.getElementById('adminChatLoadingMsg');
@@ -701,13 +705,13 @@
         });
         return tmp.innerHTML;
       }
-      /** Превращает Markdown **жирный** и *курсив* в HTML (для уже экранированного текста). */
-      function markdownBoldItalicToHtml(escapedText) {
-        return escapedText
-          .replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>')
-          .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-          .replace(/__([\s\S]*?)__/g, '<strong>$1</strong>')
-          .replace(/_([^_]+)_/g, '<em>$1</em>');
+      /** После экранирования возвращает в разметку только безопасные инлайн-теги (strong, b, em, i), чтобы они рендерились, а не показывались как текст. */
+      function unescapeSafeInlineTags(escapedStr) {
+        return (escapedStr || '')
+          .replace(/&lt;strong&gt;/gi, '<strong>').replace(/&lt;\/strong&gt;/gi, '</strong>')
+          .replace(/&lt;b&gt;/gi, '<b>').replace(/&lt;\/b&gt;/gi, '</b>')
+          .replace(/&lt;em&gt;/gi, '<em>').replace(/&lt;\/em&gt;/gi, '</em>')
+          .replace(/&lt;i&gt;/gi, '<i>').replace(/&lt;\/i&gt;/gi, '</i>');
       }
       function processAdminReplyForDisplay(text) {
         if (!text || typeof text !== 'string') return '';
@@ -719,7 +723,7 @@
           if (m.index > lastIndex) {
             var segment = text.slice(lastIndex, m.index);
             segment = (typeof escapeHtml === 'function' ? escapeHtml(segment) : segment.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
-            segment = markdownBoldItalicToHtml(segment);
+            segment = unescapeSafeInlineTags(segment);
             segment = segment.replace(/Осталось\s+(нерешенных\s+)?вопросов:?\s*\d+/gi, function(match) { return '<span class="admin-chat-unresolved-count">' + match + '</span>'; });
             parts.push(segment.replace(/\n/g, '<br>'));
           }
@@ -729,7 +733,7 @@
         if (lastIndex < text.length) {
           var rest = text.slice(lastIndex);
           rest = (typeof escapeHtml === 'function' ? escapeHtml(rest) : rest.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
-          rest = markdownBoldItalicToHtml(rest);
+          rest = unescapeSafeInlineTags(rest);
           rest = rest.replace(/Осталось\s+(нерешенных\s+)?вопросов:?\s*\d+/gi, function(match) { return '<span class="admin-chat-unresolved-count">' + match + '</span>'; });
           parts.push(rest.replace(/\n/g, '<br>'));
         }
