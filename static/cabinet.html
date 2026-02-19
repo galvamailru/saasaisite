@@ -46,6 +46,23 @@
     h2 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.75rem; color: var(--text); }
     h3 { font-size: 1.05rem; color: var(--text-muted); margin: 1rem 0 0.5rem; }
     .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+    .profile-form .form-row { margin-bottom: 1rem; }
+    .profile-form .form-row:last-of-type { margin-bottom: 0; }
+    .profile-form label { display: block; font-weight: 600; margin-bottom: 0.35rem; color: var(--text); font-size: 0.9rem; }
+    .profile-form input[type="text"] { display: block; width: 100%; max-width: 400px; padding: 0.5rem 0.65rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.9rem; box-sizing: border-box; }
+    .profile-form .profile-user-id { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem; }
+    .profile-form .theme-options { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.35rem; }
+    .profile-form .theme-option { display: flex; align-items: center; gap: 0.35rem; padding: 0.4rem 0.75rem; border-radius: 8px; border: 2px solid var(--border); background: var(--bg); cursor: pointer; font-size: 0.85rem; }
+    .profile-form .theme-option:hover { border-color: var(--accent); }
+    .profile-form .theme-option.selected { border-color: var(--accent); background: rgba(88,166,255,0.1); }
+    .profile-form .theme-option .swatch { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; }
+    .profile-form .quick-buttons-list { list-style: none; padding: 0; margin: 0.35rem 0 0; }
+    .profile-form .quick-buttons-list li { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+    .profile-form .quick-buttons-list li input { flex: 1; max-width: 320px; }
+    .profile-form .quick-buttons-list .btn-remove { padding: 0.25rem 0.5rem; font-size: 0.8rem; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; }
+    .profile-form .quick-buttons-list .btn-remove:hover { color: #c0392b; border-color: #c0392b; }
+    .profile-form .btn-add-quick { margin-top: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.85rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
+    .profile-form .btn-add-quick:hover { border-color: var(--accent); color: var(--accent); }
     .chunk-card, .dialog-card, .leads-list .lead-item { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; margin-bottom: 0.75rem; }
     .chunk-question-label { font-size: 0.75rem; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.35rem; font-family: var(--font-mono); }
     .chunk-card .chunk-question-input, .chunk-card textarea, .admin-prompt-system textarea {
@@ -397,38 +414,15 @@
       async function loadUserPrompt() {
         if (!requireAuth()) return;
         await ensureTenant();
-        const [rPrompt, rGallery, rRag] = await Promise.all([
-          fetch(base + '/' + tenantId + '/me/prompt', { headers: headers() }),
-          fetch(base + '/' + tenantId + '/me/gallery/groups', { headers: headers() }),
-          fetch(base + '/' + tenantId + '/me/rag/documents', { headers: headers() })
-        ]);
+        const rPrompt = await fetch(base + '/' + tenantId + '/me/prompt', { headers: headers() });
         if (!rPrompt.ok) {
           document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки. Войдите в кабинет.</p>';
           return;
         }
         const data = await rPrompt.json();
-        var galleries = [];
-        var documents = [];
-        if (rGallery.ok) { try { var gList = await rGallery.json(); galleries = Array.isArray(gList) ? gList : (gList.items || gList.groups || []); } catch (_) {} }
-        if (rRag.ok) { try { var dList = await rRag.json(); documents = Array.isArray(dList) ? dList : (dList.items || dList.documents || []); } catch (_) {} }
 
         let html = '<h2>Промпт чат-бота</h2>';
         html += '<p class="hint">Единый системный промпт бота для клиентов. Если пусто — используется промпт из файла по умолчанию.</p>';
-
-        html += '<div class="panel prompt-context-info" style="margin-bottom:1rem;">';
-        html += '<h3 style="margin-top:0;font-size:0.95rem;">Галереи и документы (в том же виде передаются в контекст Админ-чата)</h3>';
-        html += '<p class="hint" style="margin-bottom:0.75rem;">Опишите в промпте сценарии использования галерей и документов (LIST_GALLERIES, SHOW_GALLERY, RAG_LIST_DOCUMENTS, RAG_GET_DOCUMENT, RAG_SEARCH), чтобы бот мог их показывать клиентам.</p>';
-        html += '<div class="prompt-context-lists">';
-        html += '<div><strong>Галереи:</strong> ';
-        if (galleries.length === 0) html += 'нет галерей';
-        else html += galleries.map(function(g) { return 'id: ' + escapeHtml(g.id || '') + ', название: ' + escapeHtml((g.name || g.title || 'Без названия')); }).join('; ');
-        html += '</div>';
-        html += '<div style="margin-top:0.5rem;"><strong>Документы RAG:</strong> ';
-        if (documents.length === 0) html += 'нет документов';
-        else html += documents.map(function(d) { return 'id: ' + escapeHtml(d.id || '') + ', название: ' + escapeHtml((d.name || d.title || d.filename || 'Без названия')); }).join('; ');
-        html += '</div>';
-        html += '</div></div>';
-
         html += '<div class="admin-prompt-system">';
         html += '<label>Системный промпт</label>';
         html += '<textarea id="userSystemPrompt" placeholder="Опишите роль агента, бизнес-цель и ключевые правила..."></textarea>';
@@ -1098,6 +1092,15 @@
         });
       }
 
+      var CHAT_THEMES = [
+        { id: 'cyan', name: 'Бирюзовый', color: '#00acc1' },
+        { id: 'blue', name: 'Синий', color: '#1976d2' },
+        { id: 'green', name: 'Зелёный', color: '#2e7d32' },
+        { id: 'purple', name: 'Фиолетовый', color: '#7b1fa2' },
+        { id: 'orange', name: 'Оранжевый', color: '#e65100' },
+        { id: 'teal', name: 'Тиловый', color: '#00695c' }
+      ];
+
       async function loadProfile() {
         if (!requireAuth()) return;
         await ensureTenant();
@@ -1107,22 +1110,72 @@
           return;
         }
         const p = await r.json();
+        const currentTheme = p.chat_theme || 'cyan';
+        const quickButtons = Array.isArray(p.quick_reply_buttons) ? p.quick_reply_buttons : ['Расскажи о вас', 'Какие услуги?', 'Контакты'];
+
         let html = '<h2>Профиль</h2>';
-        html += '<p class="hint">Имя и контакт. Системный промпт бота для клиентов редактируется в разделе <a href="#" data-goto="prompt">Промпт</a>.</p>';
-        html += '<form id="profileForm" class="panel">';
-        html += '<p><strong>user_id:</strong> ' + (p.user_id || '') + '</p>';
-        html += '<label>Имя (отображается в кабинете)<br><input type="text" id="profileDisplayName" value="' + (p.display_name || '') + '" maxlength="256"></label>';
-        html += '<label>Контакт (email/телефон/мессенджер)<br><input type="text" id="profileContact" value="' + (p.contact || '') + '" maxlength="256"></label>';
-        html += '<div style="margin-top:1rem;"><button type="submit">Сохранить профиль</button></div>';
+        html += '<p class="hint">Имя и контакт. Промпт бота — в разделе <a href="#" data-goto="prompt">Промпт</a>. Оформление чата для клиентов — ниже.</p>';
+        html += '<form id="profileForm" class="panel profile-form">';
+        html += '<div class="form-row profile-user-id"><strong>user_id:</strong> ' + escapeHtml(p.user_id || '') + '</div>';
+        html += '<div class="form-row"><label for="profileDisplayName">Имя (отображается в кабинете)</label><input type="text" id="profileDisplayName" value="' + escapeHtml(p.display_name || '') + '" maxlength="256"></div>';
+        html += '<div class="form-row"><label for="profileContact">Контакт (email / телефон / мессенджер)</label><input type="text" id="profileContact" value="' + escapeHtml(p.contact || '') + '" maxlength="256"></div>';
+        html += '<div class="form-row"><label>Цветовая гамма чата бота</label><div class="theme-options" id="profileThemeOptions">';
+        CHAT_THEMES.forEach(function(t) {
+          var sel = t.id === currentTheme ? ' selected' : '';
+          html += '<label class="theme-option' + sel + '" data-theme="' + escapeHtml(t.id) + '"><input type="radio" name="chat_theme" value="' + escapeHtml(t.id) + '"' + (t.id === currentTheme ? ' checked' : '') + ' style="display:none"><span class="swatch" style="background:' + t.color + '"></span>' + escapeHtml(t.name) + '</label>';
+        });
+        html += '</div></div>';
+        html += '<div class="form-row"><label>Быстрые кнопки подсказок (под полем ввода в чате)</label><ul class="quick-buttons-list" id="profileQuickButtonsList"></ul><button type="button" class="btn-add-quick" id="profileAddQuickBtn">Добавить кнопку</button></div>';
+        html += '<div class="form-row" style="margin-top:1rem;"><button type="submit">Сохранить профиль</button></div>';
         html += '</form>';
         document.getElementById('content').innerHTML = html;
+
+        var listEl = document.getElementById('profileQuickButtonsList');
+        function renderQuickRows() {
+          var items = listEl.querySelectorAll('.quick-row');
+          items.forEach(function(row) {
+            var inp = row.querySelector('input');
+            if (inp && inp.value.trim() === '' && items.length > 1) row.remove();
+          });
+          items = listEl.querySelectorAll('.quick-row');
+          items.forEach(function(row, i) {
+            var inp = row.querySelector('input');
+            if (!inp) return;
+            quickButtons[i] = inp.value.trim();
+          });
+        }
+        function addQuickRow(value) {
+          var li = document.createElement('li');
+          li.className = 'quick-row';
+          li.innerHTML = '<input type="text" maxlength="120" placeholder="Текст кнопки" value="' + escapeHtml(value || '') + '"><button type="button" class="btn-remove">Удалить</button>';
+          li.querySelector('.btn-remove').onclick = function() { li.remove(); };
+          listEl.appendChild(li);
+        }
+        if (quickButtons.length === 0) quickButtons.push('');
+        quickButtons.forEach(function(t) { addQuickRow(t); });
+        document.getElementById('profileAddQuickBtn').onclick = function() { addQuickRow(''); };
+
+        document.getElementById('profileThemeOptions').querySelectorAll('.theme-option').forEach(function(el) {
+          el.addEventListener('click', function() {
+            document.getElementById('profileThemeOptions').querySelectorAll('.theme-option').forEach(function(o) { o.classList.remove('selected'); });
+            el.classList.add('selected');
+            el.querySelector('input').checked = true;
+          });
+        });
 
         const form = document.getElementById('profileForm');
         form.addEventListener('submit', async function(e) {
           e.preventDefault();
+          var quickArr = [];
+          listEl.querySelectorAll('.quick-row input').forEach(function(inp) {
+            var v = (inp.value || '').trim();
+            if (v) quickArr.push(v);
+          });
           const body = {
             display_name: document.getElementById('profileDisplayName').value.trim() || null,
-            contact: document.getElementById('profileContact').value.trim() || null
+            contact: document.getElementById('profileContact').value.trim() || null,
+            chat_theme: (form.querySelector('input[name="chat_theme"]:checked') || {}).value || 'cyan',
+            quick_reply_buttons: quickArr.length ? quickArr : null
           };
           const res = await fetch(base + '/' + tenantId + '/me/profile', {
             method: 'PATCH',

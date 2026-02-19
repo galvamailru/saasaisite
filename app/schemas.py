@@ -93,6 +93,8 @@ class ProfileResponse(BaseModel):
     display_name: str | None = None
     contact: str | None = None
     system_prompt: str | None = None
+    chat_theme: str | None = None
+    quick_reply_buttons: list[str] | None = None
 
     class Config:
         from_attributes = True
@@ -102,6 +104,8 @@ class ProfileUpdate(BaseModel):
     display_name: str | None = Field(None, max_length=256)
     contact: str | None = Field(None, max_length=256)
     system_prompt: str | None = None
+    chat_theme: str | None = Field(None, max_length=64)
+    quick_reply_buttons: list[str] | None = None
 
 
 # Cabinet: admin bot prompt (единый системный промпт)

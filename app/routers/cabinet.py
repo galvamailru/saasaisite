@@ -64,7 +64,14 @@ async def get_tenant_by_slug_endpoint(
     tenant = await get_tenant_by_slug(db, slug)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    return {"id": str(tenant.id), "slug": tenant.slug, "name": tenant.name}
+    settings = tenant.settings or {}
+    return {
+        "id": str(tenant.id),
+        "slug": tenant.slug,
+        "name": tenant.name,
+        "chat_theme": settings.get("chat_theme") or "cyan",
+        "quick_reply_buttons": settings.get("quick_reply_buttons") or ["Расскажи о вас", "Какие услуги?", "Контакты"],
+    }
 
 
 def get_cabinet_user_id(
@@ -273,18 +280,25 @@ async def get_user_profile(
         raise HTTPException(status_code=404, detail="tenant not found")
     profile = await get_profile(db, tenant_id, user_id)
     system_prompt = tenant.system_prompt if getattr(tenant, "system_prompt", None) else None
+    settings = getattr(tenant, "settings", None) or {}
+    chat_theme = settings.get("chat_theme")
+    quick_reply_buttons = settings.get("quick_reply_buttons")
     if not profile:
         return ProfileResponse(
             user_id=user_id,
             display_name=None,
             contact=None,
             system_prompt=system_prompt,
+            chat_theme=chat_theme,
+            quick_reply_buttons=quick_reply_buttons,
         )
     return ProfileResponse(
         user_id=profile.user_id,
         display_name=profile.display_name,
         contact=profile.contact,
         system_prompt=system_prompt,
+        chat_theme=chat_theme,
+        quick_reply_buttons=quick_reply_buttons,
     )
 
 
@@ -305,12 +319,22 @@ async def update_user_profile(
     )
     if body.system_prompt is not None:
         tenant.system_prompt = (body.system_prompt or "").strip() or None
-        await db.flush()
+    if body.chat_theme is not None or body.quick_reply_buttons is not None:
+        settings = dict(tenant.settings or {})
+        if body.chat_theme is not None:
+            settings["chat_theme"] = (body.chat_theme or "").strip() or None
+        if body.quick_reply_buttons is not None:
+            settings["quick_reply_buttons"] = [str(s).strip() for s in body.quick_reply_buttons if str(s).strip()]
+        tenant.settings = settings
+    await db.flush()
+    settings = tenant.settings or {}
     return ProfileResponse(
         user_id=profile.user_id,
         display_name=profile.display_name,
         contact=profile.contact,
         system_prompt=tenant.system_prompt,
+        chat_theme=settings.get("chat_theme"),
+        quick_reply_buttons=settings.get("quick_reply_buttons"),
     )
 
 
