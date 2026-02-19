@@ -259,13 +259,25 @@ async def handle_admin_message(
     reply = _strip_execute_blocks(reply)
     reply, saved = await _apply_save_prompt_blocks(db, tenant_id, reply)
     reply = reply.strip()
-    # При сохранении промпта убираем из reply текст о сохранении, чтобы не дублировать зелёную рамку на фронте
+    # При сохранении промпта убираем из reply любое сообщение о сохранении, чтобы не дублировать зелёную рамку на фронте
     if saved:
-        _saved_phrase = "✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт» — там отображается текущий текст."
-        reply = reply.replace(_saved_phrase, "").strip().replace("\n\n\n", "\n\n")
+        # Удаляем первую строку, если она про "✓ Промпт ... сохранён" (модель может добавить префикс "АДМИН ПОМОЩНИК:" или разное оформление)
+        _saved_re = re.compile(r"^\s*(?:АДМИН ПОМОЩНИК:\s*)?✓[^\n]*сохранён[^\n]*(\n|$)", re.IGNORECASE)
+        reply = _saved_re.sub("", reply).strip()
+        reply = re.sub(r"\n\n\n+", "\n\n", reply)
+        # Точно убираем типичные формулировки
+        for _phrase in (
+            "✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт» — там отображается текущий текст.",
+            "✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт».",
+            '✓ Промпт бота-пользователя сохранён. Проверьте страницу "Промпт" — там отображается текущий текст.',
+        ):
+            reply = reply.replace(_phrase, "").strip()
 
     reply, validation, validation_reason = _extract_validation(reply)
-    reply = reply.strip() or "Готово."
+    reply = reply.strip()
+    # При сохранении промпта пустой reply не подменяем на "Готово." — фронт покажет только зелёную рамку
+    if not reply and not saved:
+        reply = "Готово."
 
     return {
         "reply": reply,

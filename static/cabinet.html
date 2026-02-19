@@ -565,14 +565,15 @@
             var loadingNode = document.getElementById('adminChatLoadingMsg');
             if (loadingNode && loadingNode.parentNode) loadingNode.remove();
             const data = res.ok ? await res.json() : null;
-            const reply = (data && data.reply) ? data.reply : (res.ok ? '' : 'Ошибка загрузки. Попробуйте написать сообщение.');
+            let reply = (data && data.reply) ? data.reply : (res.ok ? '' : 'Ошибка загрузки. Попробуйте написать сообщение.');
             if (data && data.prompt_saved) {
               var savedDiv = document.createElement('div');
               savedDiv.className = 'chat-msg saved-notice';
               savedDiv.textContent = '✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт».';
               log.appendChild(savedDiv);
+              reply = (reply || '').replace(/^\s*(?:АДМИН ПОМОЩНИК:\s*)?✓[^\n]*сохранён[^\n]*(\n|$)/gi, '').trim();
             }
-            if (reply) {
+            if ((reply || '').trim()) {
               appendAdminMsg('assistant', reply);
               adminChatHistory.push({ role: 'assistant', content: reply });
             }
@@ -615,12 +616,13 @@
               return;
             }
             const data = await res.json();
-            const reply = data.reply || '';
+            let reply = data.reply || '';
             if (data.prompt_saved) {
               var savedDiv = document.createElement('div');
               savedDiv.className = 'chat-msg saved-notice';
               savedDiv.textContent = '✓ Промпт бота-пользователя сохранён. Проверьте страницу «Промпт».';
               log.appendChild(savedDiv);
+              reply = (reply || '').replace(/^\s*(?:АДМИН ПОМОЩНИК:\s*)?✓[^\n]*сохранён[^\n]*(\n|$)/gi, '').trim();
             }
             if ((reply || '').trim()) {
               appendAdminMsg('assistant', reply);
