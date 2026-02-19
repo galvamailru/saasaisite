@@ -31,25 +31,6 @@
       flex-direction: column;
       min-height: 80vh;
     }
-    .chat-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 1rem 1.25rem;
-      border-bottom: 1px solid #eee;
-      background: #fafafa;
-    }
-    .chat-header-left h1 {
-      margin: 0;
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: #333;
-    }
-    .chat-header-left p {
-      margin: 0.25rem 0 0;
-      font-size: 0.85rem;
-      color: #666;
-    }
     #messages {
       flex: 1;
       overflow-y: auto;
@@ -203,13 +184,6 @@
 </head>
 <body>
   <div class="chat-card">
-    <header class="chat-header">
-      <div class="chat-header-left">
-        <h1 id="greeting">Чат</h1>
-        <p id="subtitle"></p>
-      </div>
-    </header>
-
     <div id="messages"></div>
 
     <div class="content-strip" id="contentStrip">
@@ -469,8 +443,6 @@
         tenantId = t.id;
         tenantName = t.name || 'Сайт';
         applyChatTheme(t.chat_theme || 'cyan');
-        document.getElementById('greeting').textContent = tenantName || 'Чат';
-        document.getElementById('subtitle').textContent = '';
         var suggestions = Array.isArray(t.quick_reply_buttons) && t.quick_reply_buttons.length ? t.quick_reply_buttons : ['Расскажи о вас', 'Какие услуги?', 'Контакты'];
         renderPills(suggestions);
         // Приветственное сообщение бота, сгенерированное моделью на основе промпта

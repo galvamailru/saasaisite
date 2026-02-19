@@ -145,7 +145,7 @@
     .leads-list .lead-item .lead-date { font-weight: 500; color: var(--accent); margin-top: 0.25rem; font-family: var(--font-mono); }
     .admin-prompt-system { margin-bottom: 1.5rem; }
     .admin-prompt-system label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: var(--text); font-size: 0.9rem; }
-    .admin-prompt-system textarea { min-height: 200px; }
+    .admin-prompt-system textarea { min-height: 300px; }
     .admin-chunk-card { border: 1px solid var(--border); background: rgba(88,166,255,0.04); }
     .admin-chunk-card .chunk-question-input { margin-bottom: 0.5rem; }
     .admin-chunk-card textarea { min-height: 100px; }
@@ -824,9 +824,9 @@
       async function loadGallery() {
         if (!requireAuth()) return;
         await ensureTenant();
-        document.getElementById('content').innerHTML = '<div class="page-gallery"><h2>Галерея</h2><p class="hint">Группы изображений для показа в чате (команды LIST_GALLERIES, SHOW_GALLERY).</p><p class="content-loading">Загрузка…</p></div>';
+        document.getElementById('content').innerHTML = '<div class="page-gallery"><h2>Галерея</h2><p class="hint">Группы изображений для показа в чате.</p><p class="content-loading">Загрузка…</p></div>';
         const r = await fetch(base + '/' + tenantId + '/me/gallery/groups', { headers: headers() });
-        let html = '<div class="page-gallery"><h2>Галерея</h2><p class="hint">Группы изображений для показа в чате (команды LIST_GALLERIES, SHOW_GALLERY).</p>';
+        let html = '<div class="page-gallery"><h2>Галерея</h2><p class="hint">Группы изображений для показа в чате.</p>';
         if (!r.ok) {
           document.getElementById('content').innerHTML = html + '<p class="error">Ошибка загрузки. Убедитесь, что микросервис галереи запущен.</p></div>';
           return;
@@ -1205,7 +1205,7 @@
         const codePopup = (data.popup_code || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         document.getElementById('content').innerHTML =
           '<h2>Главная</h2>' +
-          '<p class="hint">Тестируйте бота в чате и скопируйте код для вставки на сайт. Диалоги пользователей — в <a href="#" data-goto="dialogs">Мои диалоги</a>.</p>' +
+          '<p class="hint">Тестируйте бота в чате и скопируйте код для вставки на сайт.</p>' +
           '<div class="main-page-wrap">' +
           '<div class="main-page-chat">' +
           '<p class="hint" style="margin-bottom:0.5rem;">Чат для теста (режим теста — в БД не сохраняется, но помнит 10 последних сообщений)</p>' +
@@ -1213,7 +1213,6 @@
           '</div>' +
           '<div class="main-page-embed">' +
           '<p class="hint" style="margin-bottom:0.5rem;">Вставка на ваш сайт</p>' +
-          '<p class="hint">Тенант: <strong>' + escapeHtml(tenantSlug) + '</strong>. Задайте в .env <code>FRONTEND_BASE_URL</code>.</p>' +
           '<p class="hint" style="margin-top:0.25rem;margin-bottom:0.25rem;"><strong>Вариант 1.</strong> Встроенный блок чата (iframe в макете страницы).</p>' +
           '<pre class="embed-code" id="embedCodeInline">' + codeInline + '</pre>' +
           '<div class="embed-actions" style="margin-bottom:1rem;"><button type="button" id="copyEmbedInlineBtn">Копировать код (встроенный)</button></div>' +
