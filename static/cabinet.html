@@ -663,6 +663,23 @@
 
       var ALLOWED_HTML_TAGS = /^(p|div|span|br|strong|b|em|i|u|ul|ol|li|a|img|table|thead|tbody|tr|td|th|h1|h2|h3|h4)$/i;
       var HTML_BLOCK_RE = /\[HTML\]([\s\S]*?)\[\/HTML\]/gi;
+      var ALLOWED_STYLE_PROPS = /^(color|background-color|background|font-weight|font-style|font-size|text-align|margin|margin-top|margin-bottom|margin-left|margin-right|padding|padding-top|padding-bottom|padding-left|padding-right|display|width|height|max-width|border|border-radius|list-style-type|text-decoration|line-height)$/i;
+      var DANGEROUS_STYLE = /expression\s*\(|javascript\s*:|url\s*\(\s*["']?\s*javascript|behavior\s*:|@import|-moz-binding/i;
+      function sanitizeStyleValue(value) {
+        if (!value || typeof value !== 'string') return '';
+        var out = [];
+        var parts = value.split(';');
+        for (var i = 0; i < parts.length; i++) {
+          var part = parts[i].trim();
+          var colon = part.indexOf(':');
+          if (colon <= 0) continue;
+          var prop = part.slice(0, colon).trim().toLowerCase();
+          var val = part.slice(colon + 1).trim();
+          if (DANGEROUS_STYLE.test(val)) continue;
+          if (ALLOWED_STYLE_PROPS.test(prop)) out.push(prop + ':' + val);
+        }
+        return out.join('; ');
+      }
       function sanitizeHtmlForChat(raw) {
         if (!raw || typeof raw !== 'string') return '';
         var tmp = document.createElement('div');
@@ -675,7 +692,10 @@
             if (/^on/i.test(a.name)) el.removeAttribute(a.name);
             else if (el.tagName === 'A' && (a.name === 'href' || a.name === 'target' || a.name === 'rel')) { }
             else if (el.tagName === 'IMG' && (a.name === 'src' || a.name === 'alt' || a.name === 'loading')) { }
-            else if (a.name !== 'href' && a.name !== 'src' && a.name !== 'alt' && a.name !== 'target' && a.name !== 'rel' && a.name !== 'loading') el.removeAttribute(a.name);
+            else if (a.name === 'style') {
+              var safe = sanitizeStyleValue(a.value);
+              if (safe) el.setAttribute('style', safe); else el.removeAttribute('style');
+            } else if (a.name !== 'href' && a.name !== 'src' && a.name !== 'alt' && a.name !== 'target' && a.name !== 'rel' && a.name !== 'loading') el.removeAttribute(a.name);
           }
           if (el.tagName === 'A') { el.setAttribute('target', '_blank'); el.setAttribute('rel', 'noopener noreferrer'); }
         });
