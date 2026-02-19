@@ -1,6 +1,6 @@
 """
-Пользовательский чат с MCP: модель получает tools от Gallery, RAG и динамических серверов из БД,
-вызывает их через tool_calls; цикл до финального ответа.
+Пользовательский чат с MCP: встроенные tools Gallery и RAG (tenant_id подставляется на бэкенде)
+и динамические серверы из БД; цикл до финального ответа.
 """
 import json
 import re
@@ -10,7 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.llm_client import chat_once_with_tools
-from app.services.mcp_client import call_mcp_tool_by_url, fetch_tools_from_url
+from app.services.mcp_client import (
+    GALLERY_TOOL_NAMES,
+    RAG_TOOL_NAMES,
+    call_gallery_tool,
+    call_mcp_tool_by_url,
+    call_rag_tool,
+    fetch_tools_from_url,
+    get_gallery_tools_for_llm,
+    get_rag_tools_for_llm,
+)
 from app.services.cabinet_service import list_mcp_servers, get_mcp_server
 
 MAX_TOOL_ROUNDS = 3
@@ -28,9 +37,18 @@ def _inject_base_url_to_image_paths(text: str, tenant_id: UUID) -> str:
     return re.sub(pattern, repl, text)
 
 
+# Блок, добавляемый к системному промпту: контекст тенанта и использование инструментов без запроса идентификаторов
+_CONTEXT_TENANT_BLOCK = """
+
+Контекст: диалог ведётся в рамках текущего тенанта (пользователя). Идентификатор тенанта уже известен системе и подставляется автоматически при вызове инструментов галереи и документов. Никогда не проси пользователя ввести tenant_id, UUID тенанта или другие внутренние идентификаторы. На вопросы «какие галереи», «покажи галереи», «какие документы» сразу вызывай инструменты list_galleries или list_documents соответственно.
+"""
+
+
 async def _get_all_tools_for_llm(tenant_id: UUID, db: AsyncSession) -> list[dict]:
-    """Загружает tools только из включённых MCP-серверов тенанта (БД). Имена с префиксом mcp_<id>__."""
+    """Встроенные tools Gallery и RAG + включённые MCP-серверы из БД (префикс mcp_<id>__)."""
     out = []
+    out.extend(get_gallery_tools_for_llm())
+    out.extend(get_rag_tools_for_llm())
     servers = await list_mcp_servers(db, tenant_id)
     for s in servers:
         if not s.enabled:
@@ -58,7 +76,11 @@ async def _get_all_tools_for_llm(tenant_id: UUID, db: AsyncSession) -> list[dict
 
 
 async def _call_tool(tenant_id: UUID, name: str, arguments: dict, db: AsyncSession) -> str:
-    """Вызов tool только по динамическим MCP-серверам из БД (префикс mcp_<id>__)."""
+    """Маршрутизация: встроенные Gallery/RAG (tenant_id подставляется) или MCP из БД (mcp_<id>__)."""
+    if name in GALLERY_TOOL_NAMES:
+        return await call_gallery_tool(tenant_id, name, arguments)
+    if name in RAG_TOOL_NAMES:
+        return await call_rag_tool(tenant_id, name, arguments)
     if name.startswith("mcp_") and "__" in name:
         prefix, inner_name = name.split("__", 1)
         server_id_str = prefix.replace("mcp_", "")
@@ -88,14 +110,14 @@ async def run_user_chat_with_mcp_tools(
     Возвращает финальный текст ответа (без tool_calls).
     """
     tools = await _get_all_tools_for_llm(tenant_id, db)
+    prompt_with_context = (system_prompt or "").strip() + _CONTEXT_TENANT_BLOCK
     if not tools:
-        # Fallback: один запрос без tools (модель не сможет вызвать галерею/RAG)
         from app.llm_client import chat_once
-        return await chat_once(system_prompt, messages)
+        return await chat_once(prompt_with_context, messages)
 
     current_messages = list(messages)
     for _ in range(MAX_TOOL_ROUNDS):
-        out = await chat_once_with_tools(system_prompt, current_messages, tools)
+        out = await chat_once_with_tools(prompt_with_context, current_messages, tools)
         content = out.get("content") or ""
         tool_calls = out.get("tool_calls")
 

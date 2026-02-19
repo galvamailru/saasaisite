@@ -1,8 +1,94 @@
 """
 Клиент MCP: запрос tools/list и tools/call по произвольному base_url.
-Подключения MCP задаются только из БД (страница «MCP серверы» в кабинете).
+Встроенные инструменты Gallery и RAG (tenant_id подставляется на бэкенде).
+Дополнительные MCP — из БД (страница «MCP серверы» в кабинете).
 """
 import httpx
+
+from app.config import settings
+
+# Встроенные инструменты галереи и RAG — tenant_id не передаётся в LLM, подставляется при вызове
+GALLERY_TOOL_NAMES = {"list_galleries", "show_gallery"}
+RAG_TOOL_NAMES = {"list_documents", "get_document", "search_documents"}
+
+
+def get_gallery_tools_for_llm() -> list[dict]:
+    """Инструменты галереи для LLM: без параметра tenant_id (подставляется при вызове)."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "list_galleries",
+                "description": "Получить список галерей изображений текущего пользователя. Возвращает название, id и описание каждой галереи. Используй при вопросах «какие галереи», «покажи галереи».",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "show_gallery",
+                "description": "Показать содержимое галереи по id: список URL изображений. Используй после list_galleries, когда пользователь просит открыть конкретную галерею.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"group_id": {"type": "string", "description": "UUID группы (галереи) из list_galleries"}},
+                    "required": ["group_id"],
+                },
+            },
+        },
+    ]
+
+
+def get_rag_tools_for_llm() -> list[dict]:
+    """Инструменты RAG для LLM: без параметра tenant_id (подставляется при вызове)."""
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "list_documents",
+                "description": "Получить список документов текущего пользователя (название и id). Используй при вопросах про документы, базу знаний.",
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_document",
+                "description": "Получить содержимое документа по id (markdown).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"document_id": {"type": "string", "description": "UUID документа из list_documents"}},
+                    "required": ["document_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_documents",
+                "description": "Поиск по документам текущего пользователя (подстрока в содержимом).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string", "description": "Поисковый запрос"}},
+                    "required": ["query"],
+                },
+            },
+        },
+    ]
+
+
+async def call_gallery_tool(tenant_id, name: str, arguments: dict) -> str:
+    """Вызов инструмента галереи: tenant_id подставляется автоматически."""
+    args = dict(arguments)
+    args["tenant_id"] = str(tenant_id)
+    return await call_mcp_tool_by_url(settings.gallery_service_url, name, args)
+
+
+async def call_rag_tool(tenant_id, name: str, arguments: dict) -> str:
+    """Вызов инструмента RAG: tenant_id подставляется для list_documents и search_documents."""
+    args = dict(arguments)
+    if name in ("list_documents", "search_documents"):
+        args["tenant_id"] = str(tenant_id)
+    return await call_mcp_tool_by_url(settings.rag_service_url, name, args)
 
 
 async def _mcp_request(url: str, method: str, params: dict | None = None) -> dict:
