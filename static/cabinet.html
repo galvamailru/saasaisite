@@ -1234,12 +1234,40 @@
             } catch (_) {}
           });
         }
+        function copyToClipboard(text, okMessage) {
+          if (!text) { alert('Нет кода для копирования.'); return; }
+          function fallbackCopy() {
+            try {
+              var ta = document.createElement('textarea');
+              ta.value = text;
+              ta.style.position = 'fixed';
+              ta.style.top = '-9999px';
+              document.body.appendChild(ta);
+              ta.focus();
+              ta.select();
+              var ok = document.execCommand('copy');
+              document.body.removeChild(ta);
+              alert(ok ? okMessage : 'Не удалось скопировать.');
+            } catch (_) {
+              alert('Не удалось скопировать.');
+            }
+          }
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function() {
+              alert(okMessage);
+            }).catch(function() {
+              fallbackCopy();
+            });
+          } else {
+            fallbackCopy();
+          }
+        }
         var copyInlineBtn = document.getElementById('copyEmbedInlineBtn');
         if (copyInlineBtn) {
           copyInlineBtn.addEventListener('click', function() {
             var pre = document.getElementById('embedCodeInline');
             var text = pre ? pre.textContent : '';
-            navigator.clipboard.writeText(text).then(function() { alert('Код (встроенный чат) скопирован в буфер обмена.'); }).catch(function() { alert('Не удалось скопировать.'); });
+            copyToClipboard(text, 'Код (встроенный чат) скопирован в буфер обмена.');
           });
         }
         var copyPopupBtn = document.getElementById('copyEmbedPopupBtn');
@@ -1247,7 +1275,7 @@
           copyPopupBtn.addEventListener('click', function() {
             var pre = document.getElementById('embedCodePopup');
             var text = pre ? pre.textContent : '';
-            navigator.clipboard.writeText(text).then(function() { alert('Код (всплывающее окно) скопирован в буфер обмена.'); }).catch(function() { alert('Не удалось скопировать.'); });
+            copyToClipboard(text, 'Код (всплывающее окно) скопирован в буфер обмена.');
           });
         }
       }

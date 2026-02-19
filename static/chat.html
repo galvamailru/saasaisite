@@ -223,8 +223,8 @@
   <div class="chat-card">
     <header class="chat-header">
       <div class="chat-header-left">
-        <h1 id="greeting">Привет!</h1>
-        <p id="subtitle">Напишите вопрос — отвечу и подскажу материалы</p>
+        <h1 id="greeting">Чат</h1>
+        <p id="subtitle"></p>
       </div>
       <div class="chat-header-right">
         <span id="chatLabel">Чат</span>
@@ -491,10 +491,15 @@
         tenantId = t.id;
         tenantName = t.name || 'Сайт';
         applyChatTheme(t.chat_theme || 'cyan');
-        document.getElementById('greeting').textContent = 'Привет!';
-        document.getElementById('subtitle').textContent = 'Задайте вопрос — подскажу и покажу полезные материалы.';
+        document.getElementById('greeting').textContent = tenantName || 'Чат';
+        document.getElementById('subtitle').textContent = '';
         var suggestions = Array.isArray(t.quick_reply_buttons) && t.quick_reply_buttons.length ? t.quick_reply_buttons : ['Расскажи о вас', 'Какие услуги?', 'Контакты'];
         renderPills(suggestions);
+        // Приветственное сообщение бота в самом чате (как в aichatbot)
+        var welcomeText = 'Здравствуйте! Я — помощник ' + (tenantName || 'компании') + '. Расскажите в двух словах, какая у вас задача или ситуация, и я постараюсь подсказать варианты решения.';
+        setTimeout(function () {
+          addMsg('assistant', welcomeText);
+        }, 1200);
       }
 
       const form = document.getElementById('form');
