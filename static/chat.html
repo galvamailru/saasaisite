@@ -479,6 +479,7 @@
         let pendingBuffer = '';
         let streamEnded = false;
         let typewriterInterval;
+        let noTypewriter = false;
         try {
           const body = { user_id: userId, message: text };
           if (dialogId) body.dialog_id = dialogId;
@@ -495,6 +496,10 @@
           }
 
           function drainTypewriter() {
+            if (noTypewriter) {
+              if (typewriterInterval) clearInterval(typewriterInterval);
+              return;
+            }
             if (pendingBuffer.length === 0) {
               if (streamEnded && typewriterInterval) clearInterval(typewriterInterval);
               return;
@@ -530,7 +535,18 @@
                     var obj = JSON.parse(data);
                     if (obj.content) {
                       full += obj.content;
-                      pendingBuffer += obj.content;
+                      if (!noTypewriter) {
+                        var trimmedFull = full.replace(/^\s+/, '');
+                        if (trimmedFull.indexOf('[HTML]') === 0) {
+                          noTypewriter = true;
+                          pendingBuffer = '';
+                          streamedText = '';
+                          if (typewriterInterval) clearInterval(typewriterInterval);
+                          assistantEl.textContent = '…';
+                        } else {
+                          pendingBuffer += obj.content;
+                        }
+                      }
                     }
                     if (obj.error) assistantEl.textContent = 'Ошибка: ' + obj.error;
                   } catch (_) {}
