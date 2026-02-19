@@ -24,6 +24,10 @@ from app.schemas import (
     EmbedCodeResponse,
     AdminChatRequest,
     AdminChatResponse,
+    McpServerCreate,
+    McpServerUpdate,
+    McpServerResponse,
+    McpToolInfo,
 )
 from app.services.cabinet_service import (
     get_dialog_messages,
@@ -33,10 +37,16 @@ from app.services.cabinet_service import (
     get_tenant_by_id,
     list_dialogs,
     list_leads,
+    list_mcp_servers,
+    get_mcp_server,
+    create_mcp_server,
+    update_mcp_server,
+    delete_mcp_server,
     list_saved,
     list_tenant_dialogs,
     upsert_profile,
 )
+from app.services.mcp_client import fetch_tools_from_url
 from app.models import SavedItem
 from app.services.prompt_loader import load_prompt, load_admin_prompt
 from app.services.admin_prompt_service import get_admin_system_prompt, set_admin_system_prompt
@@ -644,6 +654,110 @@ async def rag_delete_document(
     status, text = await rag_request("DELETE", f"/api/v1/documents/{document_id}")
     if status >= 400:
         return JSONResponse(content={"detail": text}, status_code=status)
+    return Response(status_code=204)
+
+
+# MCP servers (dynamic connections)
+@router.get("/{tenant_id:uuid}/me/mcp-servers", response_model=list[McpServerResponse])
+async def mcp_servers_list(
+    tenant_id: UUID,
+    with_tools: bool = Query(True, description="Загрузить список tools с каждого сервера"),
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    servers = await list_mcp_servers(db, tenant_id)
+    out = []
+    for s in servers:
+        tools_data = None
+        if with_tools:
+            try:
+                raw = await fetch_tools_from_url(s.base_url)
+                tools_data = [
+                    McpToolInfo(name=t.get("name", ""), description=t.get("description", ""), inputSchema=t.get("inputSchema"))
+                    for t in raw
+                ]
+            except Exception:
+                tools_data = []
+        out.append(
+            McpServerResponse(
+                id=s.id,
+                tenant_id=s.tenant_id,
+                name=s.name,
+                base_url=s.base_url,
+                enabled=s.enabled,
+                created_at=s.created_at,
+                tools=tools_data,
+            )
+        )
+    return out
+
+
+@router.post("/{tenant_id:uuid}/me/mcp-servers", response_model=McpServerResponse, status_code=201)
+async def mcp_server_create(
+    tenant_id: UUID,
+    body: McpServerCreate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    s = await create_mcp_server(
+        db, tenant_id, name=body.name, base_url=body.base_url, enabled=body.enabled
+    )
+    return McpServerResponse(
+        id=s.id,
+        tenant_id=s.tenant_id,
+        name=s.name,
+        base_url=s.base_url,
+        enabled=s.enabled,
+        created_at=s.created_at,
+        tools=None,
+    )
+
+
+@router.patch("/{tenant_id:uuid}/me/mcp-servers/{server_id:uuid}", response_model=McpServerResponse)
+async def mcp_server_update(
+    tenant_id: UUID,
+    server_id: UUID,
+    body: McpServerUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    server = await get_mcp_server(db, tenant_id, server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="MCP server not found")
+    await update_mcp_server(
+        db, server,
+        name=body.name,
+        base_url=body.base_url,
+        enabled=body.enabled,
+    )
+    return McpServerResponse(
+        id=server.id,
+        tenant_id=server.tenant_id,
+        name=server.name,
+        base_url=server.base_url,
+        enabled=server.enabled,
+        created_at=server.created_at,
+        tools=None,
+    )
+
+
+@router.delete("/{tenant_id:uuid}/me/mcp-servers/{server_id:uuid}", status_code=204)
+async def mcp_server_delete(
+    tenant_id: UUID,
+    server_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    server = await get_mcp_server(db, tenant_id, server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail="MCP server not found")
+    await delete_mcp_server(db, server)
     return Response(status_code=204)
 
 

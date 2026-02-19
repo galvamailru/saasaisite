@@ -28,6 +28,24 @@ async def _mcp_request(url: str, method: str, params: dict | None = None) -> dic
     return data.get("result", {})
 
 
+def _mcp_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/mcp"
+
+
+async def fetch_tools_from_url(base_url: str) -> list[dict]:
+    """
+    Запрашивает tools/list у MCP-сервера по base_url (например http://host:8010).
+    Возвращает список сырых tools: [{"name", "description", "inputSchema"}, ...].
+    При ошибке соединения возвращает [] или поднимает исключение — вызывающий код решает.
+    """
+    url = _mcp_url(base_url)
+    try:
+        result = await _mcp_request(url, "tools/list")
+        return result.get("tools") or []
+    except Exception:
+        raise
+
+
 def _mcp_tool_to_deepseek(mcp_tool: dict, drop_tenant_id: bool = True) -> dict:
     """Конвертирует MCP tool в формат DeepSeek/OpenAI (function)."""
     name = mcp_tool.get("name", "")
@@ -106,10 +124,24 @@ GALLERY_TOOL_NAMES = {"list_galleries", "show_gallery"}
 RAG_TOOL_NAMES = {"list_documents", "get_document", "search_documents"}
 
 
+async def call_mcp_tool_by_url(base_url: str, name: str, arguments: dict) -> str:
+    """Вызывает tool по имени на произвольном MCP-сервере по base_url."""
+    url = _mcp_url(base_url)
+    result = await _mcp_request(url, "tools/call", {"name": name, "arguments": arguments})
+    content = result.get("content") or []
+    for part in content:
+        if part.get("type") == "text":
+            return part.get("text", "")
+    return ""
+
+
 async def call_mcp_tool(tenant_id: UUID, name: str, arguments: dict) -> str:
-    """Вызывает tool по имени через соответствующий MCP-сервер."""
+    """Вызывает tool по имени через соответствующий MCP-сервер (Gallery, RAG или динамический по префиксу mcp_<id>__)."""
     if name in GALLERY_TOOL_NAMES:
         return await call_gallery_tool(tenant_id, name, arguments)
     if name in RAG_TOOL_NAMES:
         return await call_rag_tool(tenant_id, name, arguments)
+    if name.startswith("mcp_") and "__" in name:
+        # Динамический сервер: mcp_<uuid>__toolname — маршрутизация в user_chat_mcp_service через call_mcp_tool_with_db
+        return f"Неизвестный инструмент: {name} (вызов динамического сервера выполняется в сервисе чата)."
     return f"Неизвестный инструмент: {name}."

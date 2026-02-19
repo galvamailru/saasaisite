@@ -37,6 +37,7 @@ class Tenant(Base):
         "AdminPromptChunk", back_populates="tenant", order_by="AdminPromptChunk.position"
     )
     leads = relationship("Lead", back_populates="tenant")
+    mcp_servers = relationship("McpServer", back_populates="tenant", cascade="all, delete-orphan")
 
 
 class TenantUser(Base):
@@ -174,6 +175,24 @@ class AdminPromptChunk(Base):
     __table_args__ = (
         Index("ix_admin_prompt_chunk_tenant_position", "tenant_id", "position"),
     )
+
+
+class McpServer(Base):
+    """Динамически подключаемый MCP-сервер тенанта (URL + название). Tools запрашиваются по tools/list."""
+    __tablename__ = "mcp_server"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(2048), nullable=False)  # e.g. http://host:8010, путь /mcp добавляется при вызове
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    tenant = relationship("Tenant", back_populates="mcp_servers")
+
+    __table_args__ = (Index("ix_mcp_server_tenant_id", "tenant_id"),)
 
 
 class Lead(Base):

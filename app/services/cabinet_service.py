@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Dialog, Lead, Message, SavedItem, UserProfile
+from app.models import Dialog, Lead, McpServer, Message, SavedItem, UserProfile
 
 
 PREVIEW_MAX_LEN = 120
@@ -243,3 +243,56 @@ async def upsert_profile(
         profile.contact = contact
     await db.flush()
     return profile
+
+
+# MCP servers
+async def list_mcp_servers(db: AsyncSession, tenant_id: UUID) -> list[McpServer]:
+    result = await db.execute(
+        select(McpServer).where(McpServer.tenant_id == tenant_id).order_by(McpServer.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_mcp_server(db: AsyncSession, tenant_id: UUID, server_id: UUID) -> McpServer | None:
+    result = await db.execute(
+        select(McpServer).where(
+            McpServer.id == server_id,
+            McpServer.tenant_id == tenant_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_mcp_server(
+    db: AsyncSession,
+    tenant_id: UUID,
+    name: str,
+    base_url: str,
+    enabled: bool = True,
+) -> McpServer:
+    s = McpServer(tenant_id=tenant_id, name=name.strip(), base_url=base_url.strip(), enabled=enabled)
+    db.add(s)
+    await db.flush()
+    return s
+
+
+async def update_mcp_server(
+    db: AsyncSession,
+    server: McpServer,
+    name: str | None = None,
+    base_url: str | None = None,
+    enabled: bool | None = None,
+) -> McpServer:
+    if name is not None:
+        server.name = name.strip()
+    if base_url is not None:
+        server.base_url = base_url.strip()
+    if enabled is not None:
+        server.enabled = enabled
+    await db.flush()
+    return server
+
+
+async def delete_mcp_server(db: AsyncSession, server: McpServer) -> None:
+    await db.delete(server)
+    await db.flush()

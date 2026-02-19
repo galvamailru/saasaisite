@@ -1,14 +1,26 @@
 """
-Пользовательский чат с MCP: модель получает tools от Gallery и RAG,
+Пользовательский чат с MCP: модель получает tools от Gallery, RAG и динамических серверов из БД,
 вызывает их через tool_calls; цикл до финального ответа.
 """
 import json
 import re
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import settings
 from app.llm_client import chat_once_with_tools
-from app.services.mcp_client import call_mcp_tool, get_all_mcp_tools_for_llm
+from app.services.mcp_client import (
+    call_gallery_tool,
+    call_mcp_tool_by_url,
+    call_rag_tool,
+    fetch_tools_from_url,
+    get_gallery_tools_for_llm,
+    get_rag_tools_for_llm,
+    GALLERY_TOOL_NAMES,
+    RAG_TOOL_NAMES,
+)
+from app.services.cabinet_service import list_mcp_servers, get_mcp_server
 
 MAX_TOOL_ROUNDS = 10
 
@@ -25,17 +37,72 @@ def _inject_base_url_to_image_paths(text: str, tenant_id: UUID) -> str:
     return re.sub(pattern, repl, text)
 
 
+async def _get_all_tools_for_llm(tenant_id: UUID, db: AsyncSession) -> list[dict]:
+    """Объединяет tools Gallery, RAG и включённых динамических MCP-серверов из БД. У динамических имён префикс mcp_<id>__."""
+    out = []
+    out.extend(await get_gallery_tools_for_llm())
+    out.extend(await get_rag_tools_for_llm())
+    servers = await list_mcp_servers(db, tenant_id)
+    for s in servers:
+        if not s.enabled:
+            continue
+        try:
+            raw = await fetch_tools_from_url(s.base_url)
+            for t in raw:
+                name = t.get("name", "")
+                if not name:
+                    continue
+                prefixed = f"mcp_{s.id}__{name}"
+                desc = (t.get("description") or "").strip()
+                schema = dict(t.get("inputSchema") or {})
+                out.append({
+                    "type": "function",
+                    "function": {
+                        "name": prefixed,
+                        "description": desc or f"Инструмент {name} (сервер {s.name})",
+                        "parameters": schema,
+                    },
+                })
+        except Exception:
+            continue
+    return out
+
+
+async def _call_tool(tenant_id: UUID, name: str, arguments: dict, db: AsyncSession) -> str:
+    """Маршрутизирует вызов: Gallery, RAG или динамический MCP по префиксу mcp_<id>__."""
+    if name in GALLERY_TOOL_NAMES:
+        return await call_gallery_tool(tenant_id, name, arguments)
+    if name in RAG_TOOL_NAMES:
+        return await call_rag_tool(tenant_id, name, arguments)
+    if name.startswith("mcp_") and "__" in name:
+        prefix, inner_name = name.split("__", 1)
+        server_id_str = prefix.replace("mcp_", "")
+        try:
+            server_uuid = UUID(server_id_str)
+        except ValueError:
+            return f"Ошибка: неверный идентификатор сервера в имени инструмента."
+        server = await get_mcp_server(db, tenant_id, server_uuid)
+        if not server:
+            return f"Ошибка: MCP сервер не найден."
+        try:
+            return await call_mcp_tool_by_url(server.base_url, inner_name, arguments)
+        except Exception as e:
+            return f"Ошибка вызова инструмента: {e}"
+    return f"Неизвестный инструмент: {name}."
+
+
 async def run_user_chat_with_mcp_tools(
     tenant_id: UUID,
     system_prompt: str,
     messages: list[dict],
+    db: AsyncSession,
 ) -> str:
     """
-    Запускает диалог с моделью, передаёт tools от MCP (Gallery + RAG).
+    Запускает диалог с моделью, передаёт tools от MCP (Gallery, RAG и динамические из БД).
     При tool_calls выполняет вызовы через MCP и повторяет запрос.
     Возвращает финальный текст ответа (без tool_calls).
     """
-    tools = await get_all_mcp_tools_for_llm()
+    tools = await _get_all_tools_for_llm(tenant_id, db)
     if not tools:
         # Fallback: один запрос без tools (модель не сможет вызвать галерею/RAG)
         from app.llm_client import chat_once
@@ -73,7 +140,7 @@ async def run_user_chat_with_mcp_tools(
             name = tc.get("name") or ""
             arguments = tc.get("arguments") or {}
             try:
-                result = await call_mcp_tool(tenant_id, name, arguments)
+                result = await _call_tool(tenant_id, name, arguments, db)
             except Exception as e:
                 result = f"Ошибка: {e}"
             current_messages.append({

@@ -153,3 +153,35 @@ class AdminChatResponse(BaseModel):
     validation_reason: str | None = None
     prompt_saved: bool = False  # True, если в этом ответе промпт бота-пользователя был сохранён через [SAVE_PROMPT]
     session_id: str | None = None  # идентификатор сессии (передаётся при создании новой сессии для последующих запросов)
+
+
+# MCP servers (dynamic connections)
+class McpServerCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=256)
+    base_url: str = Field(..., min_length=1, max_length=2048)
+    enabled: bool = True
+
+
+class McpServerUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=256)
+    base_url: str | None = Field(None, min_length=1, max_length=2048)
+    enabled: bool | None = None
+
+
+class McpToolInfo(BaseModel):
+    name: str
+    description: str = ""
+    inputSchema: dict | None = None
+
+
+class McpServerResponse(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    name: str
+    base_url: str
+    enabled: bool
+    created_at: datetime
+    tools: list[McpToolInfo] | None = None  # заполняется при with_tools=true
+
+    class Config:
+        from_attributes = True

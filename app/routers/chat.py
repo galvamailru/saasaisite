@@ -47,7 +47,7 @@ async def _sse_stream(
         await save_message(db, tenant_id, user_id, dialog.id, "user", message_text)
         await save_lead_if_contact(db, tenant_id, user_id, dialog.id, message_text)
     try:
-        final_text = await run_user_chat_with_mcp_tools(tenant_id, prompt, history)
+        final_text = await run_user_chat_with_mcp_tools(tenant_id, prompt, history, db)
     except Exception:
         if not is_test and dialog:
             await save_message(db, tenant_id, user_id, dialog.id, "assistant", "Ошибка при обращении к модели или инструментам.")
