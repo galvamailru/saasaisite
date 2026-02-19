@@ -8,10 +8,13 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm_client import chat_once
-from app.services.prompt_loader import load_admin_prompt
+from app.services.prompt_loader import load_admin_prompt, load_prompt_for_tenant
 from app.services.admin_prompt_service import get_admin_system_prompt
 from app.services.cabinet_service import get_tenant_by_id
 from app.services.microservices_client import gallery_request, rag_request
+
+# Контекстное окно админ-чата: только последнее сообщение (проверка промпта без истории)
+ADMIN_CHAT_CONTEXT_MESSAGE_LIMIT = 1
 
 EXECUTE_BLOCK_RE = re.compile(r"\[EXECUTE\](.*?)\[/EXECUTE\]", re.DOTALL | re.IGNORECASE)
 SAVE_PROMPT_RE = re.compile(r"\[SAVE_PROMPT\](.*?)\[/SAVE_PROMPT\]", re.DOTALL | re.IGNORECASE)
@@ -61,14 +64,21 @@ async def _fetch_galleries_and_documents(tenant_id: UUID) -> tuple[list[dict], l
     return galleries, documents
 
 
-async def _build_state(db: AsyncSession, tenant_id: UUID) -> str:
+async def _build_client_prompt_context(db: AsyncSession, tenant_id: UUID) -> str:
     """
-    Контекст для LLM: только списки галерей и документов RAG тенанта с предложениями.
+    «Промпт пользователя» для проверки админ-ботом: системный промпт бота-клиента
+    + список галерей + список документов RAG тенанта. Именно этот контекст видит бот-клиент.
     """
+    client_system_prompt = await load_prompt_for_tenant(db, tenant_id)
     galleries, documents = await _fetch_galleries_and_documents(tenant_id)
 
     lines = [
-        "Список галерей изображений у тенанта (если в промпте бота-пользователя нет сценария для галереи — предложи добавить):",
+        "Системный промпт бота-клиента (то, что видят пользователи чата):",
+        "---",
+        (client_system_prompt or "(пусто)").strip(),
+        "---",
+        "",
+        "Список галерей изображений у тенанта (если в промпте выше нет сценария для галереи — предложи добавить):",
     ]
     if not galleries:
         lines.append("  (галерей пока нет)")
@@ -221,19 +231,21 @@ async def handle_admin_message(
     if not text:
         return "Напишите, чем могу помочь: настроить промпт бота для клиентов?"
 
-    state = await _build_state(db, tenant_id)
+    # Контекст = промпт админ-бота + «промпт пользователя» (системный промпт бота-клиента + галереи + RAG)
+    client_context = await _build_client_prompt_context(db, tenant_id)
     system_prompt = await _get_admin_prompt_assembled(db, tenant_id)
-    system_with_state = system_prompt.rstrip() + "\n\n---\n" + state
+    system_with_context = system_prompt.rstrip() + "\n\n---\nКонтекст бота-клиента (промпт, галереи, документы):\n---\n" + client_context
 
+    # Контекстное окно: только последнее сообщение (1 сообщение)
     messages = []
-    for h in (history or [])[-20:]:
+    for h in (history or [])[-ADMIN_CHAT_CONTEXT_MESSAGE_LIMIT:]:
         role = h.get("role", "user")
         content = (h.get("content") or "").strip()
         if role in ("user", "assistant") and content:
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": text})
 
-    raw_reply = (await chat_once(system_with_state, messages) or "").strip()
+    raw_reply = (await chat_once(system_with_context, messages) or "").strip()
     reply = raw_reply
     reply = _strip_execute_blocks(reply)
     reply, saved = await _apply_save_prompt_blocks(db, tenant_id, reply)
@@ -251,8 +263,8 @@ async def handle_admin_message(
         "validation_reason": validation_reason,
         "prompt_saved": saved,
         "raw_reply": raw_reply,
-        "request_system": system_with_state,
+        "request_system": system_with_context,
         "request_system_prompt": system_prompt.rstrip(),
-        "request_context": state,
+        "request_context": client_context,
         "request_messages": messages,
     }

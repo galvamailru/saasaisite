@@ -23,6 +23,8 @@ from app.services.mcp_client import (
 from app.services.cabinet_service import list_mcp_servers, get_mcp_server
 
 MAX_TOOL_ROUNDS = 3
+# Сколько последних сообщений диалога передавать в модель (контекстное окно)
+CONTEXT_MESSAGE_LIMIT = 10
 
 
 def _inject_base_url_to_image_paths(text: str, tenant_id: UUID) -> str:
@@ -37,10 +39,12 @@ def _inject_base_url_to_image_paths(text: str, tenant_id: UUID) -> str:
     return re.sub(pattern, repl, text)
 
 
-# Блок, добавляемый к системному промпту: контекст тенанта и использование инструментов без запроса идентификаторов
+# Блок, добавляемый к системному промпту: контекст тенанта, инструменты, изображения
 _CONTEXT_TENANT_BLOCK = """
 
 Контекст: диалог ведётся в рамках текущего тенанта (пользователя). Идентификатор тенанта уже известен системе и подставляется автоматически при вызове инструментов галереи и документов. Никогда не проси пользователя ввести tenant_id, UUID тенанта или другие внутренние идентификаторы. На вопросы «какие галереи», «покажи галереи», «какие документы» сразу вызывай инструменты list_galleries или list_documents соответственно.
+
+Изображения из галереи: инструмент show_gallery возвращает список URL-путей изображений (каждая строка — один путь вида /api/v1/tenants/.../me/gallery/.../file). При показе изображений пользователю обязательно вставляй эти пути в markdown-разметку: ![название галереи или описание](путь_из_ответа_инструмента). Не оставляй скобки пустыми — без URL картинка не отобразится. Для нескольких изображений используй отдельную строку ![описание](путь) для каждого.
 """
 
 
@@ -115,7 +119,8 @@ async def run_user_chat_with_mcp_tools(
         from app.llm_client import chat_once
         return await chat_once(prompt_with_context, messages)
 
-    current_messages = list(messages)
+    # Контекстное окно: только последние N сообщений
+    current_messages = list(messages)[-CONTEXT_MESSAGE_LIMIT:]
     for _ in range(MAX_TOOL_ROUNDS):
         out = await chat_once_with_tools(prompt_with_context, current_messages, tools)
         content = out.get("content") or ""
