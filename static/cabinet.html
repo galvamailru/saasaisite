@@ -681,6 +681,14 @@
         });
         return tmp.innerHTML;
       }
+      /** Превращает Markdown **жирный** и *курсив* в HTML (для уже экранированного текста). */
+      function markdownBoldItalicToHtml(escapedText) {
+        return escapedText
+          .replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+          .replace(/__([\s\S]*?)__/g, '<strong>$1</strong>')
+          .replace(/_([^_]+)_/g, '<em>$1</em>');
+      }
       function processAdminReplyForDisplay(text) {
         if (!text || typeof text !== 'string') return '';
         var parts = [];
@@ -691,6 +699,7 @@
           if (m.index > lastIndex) {
             var segment = text.slice(lastIndex, m.index);
             segment = (typeof escapeHtml === 'function' ? escapeHtml(segment) : segment.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
+            segment = markdownBoldItalicToHtml(segment);
             segment = segment.replace(/Осталось\s+(нерешенных\s+)?вопросов:?\s*\d+/gi, function(match) { return '<span class="admin-chat-unresolved-count">' + match + '</span>'; });
             parts.push(segment.replace(/\n/g, '<br>'));
           }
@@ -700,6 +709,7 @@
         if (lastIndex < text.length) {
           var rest = text.slice(lastIndex);
           rest = (typeof escapeHtml === 'function' ? escapeHtml(rest) : rest.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
+          rest = markdownBoldItalicToHtml(rest);
           rest = rest.replace(/Осталось\s+(нерешенных\s+)?вопросов:?\s*\d+/gi, function(match) { return '<span class="admin-chat-unresolved-count">' + match + '</span>'; });
           parts.push(rest.replace(/\n/g, '<br>'));
         }

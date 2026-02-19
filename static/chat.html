@@ -323,6 +323,15 @@
         return parts.join('');
       }
 
+      /** Превращает Markdown **жирный** и *курсив* в HTML (для уже экранированной строки). */
+      function markdownBoldItalicToHtml(escapedStr) {
+        return (escapedStr || '')
+          .replace(/\*\*([\s\S]*?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+          .replace(/__([\s\S]*?)__/g, '<strong>$1</strong>')
+          .replace(/_([^_]+)_/g, '<em>$1</em>');
+      }
+
       var galleryUrlRegex = /(https?:\/\/[^\s]+\/me\/gallery\/groups\/[^\s]+\/images\/[^\s]+\/file)/gi;
 
       function isGalleryImageUrl(line) {
@@ -340,7 +349,8 @@
         if (parts.length === 1) {
           var escaped = escapeHtml(trimmed);
           var linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
-          return escaped.replace(linkRegex, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
+          var withLinks = escaped.replace(linkRegex, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
+          return markdownBoldItalicToHtml(withLinks);
         }
         function isGalleryUrl(s) {
           return (s || '').indexOf('/me/gallery/groups/') !== -1 && (s || '').indexOf('/images/') !== -1 && (s || '').indexOf('/file') !== -1;
@@ -351,7 +361,8 @@
             out += '<img src="' + escapeHtml(parts[i]) + '" alt="" class="chat-gallery-img" loading="lazy">';
           } else {
             var esc = escapeHtml(parts[i]);
-            out += esc.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
+            var withLinks = esc.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
+            out += markdownBoldItalicToHtml(withLinks);
           }
         }
         return out;
