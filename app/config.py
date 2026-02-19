@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # Логи диалогов админ-бота (каждая сессия — отдельный файл)
     admin_chat_log_dir: str = "logs/admin_chat"
 
+    # Тенант-администратор: slug тенанта, пользователи которого могут видеть список всех тенантов и редактировать их ограничения (страница «Пользователи»). Пусто — доступ к списку только у этого тенанта отключён.
+    admin_tenant_slug: str = ""
+
     def get_prompt_path(self, base_dir: Path | None = None) -> Path:
         p = Path(self.prompt_file)
         if not p.is_absolute():

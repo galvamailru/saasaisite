@@ -7,8 +7,8 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.config import settings as app_settings
 from app.services.auth_service import decode_jwt, get_tenant_user_by_id
-from app.services.cabinet_service import get_tenant_by_slug
 from app.schemas import (
     DialogDetailResponse,
     DialogListResponse,
@@ -30,6 +30,7 @@ from app.schemas import (
     McpToolInfo,
     LimitsResponse,
     LimitsUpdate,
+    TenantWithLimitsItem,
 )
 from app.services.cabinet_service import (
     get_dialog_messages,
@@ -37,6 +38,8 @@ from app.services.cabinet_service import (
     get_profile,
     get_saved_by_id,
     get_tenant_by_id,
+    get_tenant_by_slug,
+    list_all_tenants,
     list_dialogs,
     list_leads,
     list_mcp_servers,
@@ -985,6 +988,90 @@ async def update_limits(
         settings["gallery_max_images_per_group"] = body.gallery_max_images_per_group
         current_limits["gallery_max_images_per_group"] = body.gallery_max_images_per_group
     tenant.settings = settings
+    await db.flush()
+    return LimitsResponse(
+        chat_max_user_message_chars=current_limits["chat_max_user_message_chars"],
+        user_prompt_max_chars=current_limits["user_prompt_max_chars"],
+        rag_max_documents=current_limits["rag_max_documents"],
+        gallery_max_groups=current_limits["gallery_max_groups"],
+        gallery_max_images_per_group=current_limits["gallery_max_images_per_group"],
+    )
+
+
+def _require_admin_tenant(tenant_slug: str) -> None:
+    """Проверка: текущий тенант — администратор (может управлять ограничениями других тенантов)."""
+    admin_slug = (app_settings.admin_tenant_slug or "").strip()
+    if not admin_slug or tenant_slug != admin_slug:
+        raise HTTPException(
+            status_code=403,
+            detail="Доступ только для администратора. Задайте ADMIN_TENANT_SLUG в .env для тенанта-администратора.",
+        )
+
+
+# Список всех тенантов с ограничениями (для страницы «Пользователи» у администратора)
+@router.get("/{tenant_id:uuid}/me/admin/tenants", response_model=list[TenantWithLimitsItem])
+async def admin_list_tenants_with_limits(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
+    tenants = await list_all_tenants(db)
+    out = []
+    for t in tenants:
+        limits = _get_limits_from_settings(t.settings or {})
+        out.append(
+            TenantWithLimitsItem(
+                id=t.id,
+                slug=t.slug,
+                name=t.name or t.slug,
+                chat_max_user_message_chars=limits["chat_max_user_message_chars"],
+                user_prompt_max_chars=limits["user_prompt_max_chars"],
+                rag_max_documents=limits["rag_max_documents"],
+                gallery_max_groups=limits["gallery_max_groups"],
+                gallery_max_images_per_group=limits["gallery_max_images_per_group"],
+            )
+        )
+    return out
+
+
+# Обновление ограничений выбранного тенанта (администратор)
+@router.patch(
+    "/{tenant_id:uuid}/me/admin/tenants/{target_tenant_id:uuid}/limits",
+    response_model=LimitsResponse,
+)
+async def admin_update_tenant_limits(
+    tenant_id: UUID,
+    target_tenant_id: UUID,
+    body: LimitsUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
+    target = await get_tenant_by_id(db, target_tenant_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    settings = dict(target.settings or {})
+    current_limits = _get_limits_from_settings(settings)
+    if body.user_prompt_max_chars is not None:
+        settings["user_prompt_max_chars"] = body.user_prompt_max_chars
+        current_limits["user_prompt_max_chars"] = body.user_prompt_max_chars
+    if body.rag_max_documents is not None:
+        settings["rag_max_documents"] = body.rag_max_documents
+        current_limits["rag_max_documents"] = body.rag_max_documents
+    if body.gallery_max_groups is not None:
+        settings["gallery_max_groups"] = body.gallery_max_groups
+        current_limits["gallery_max_groups"] = body.gallery_max_groups
+    if body.gallery_max_images_per_group is not None:
+        settings["gallery_max_images_per_group"] = body.gallery_max_images_per_group
+        current_limits["gallery_max_images_per_group"] = body.gallery_max_images_per_group
+    target.settings = settings
     await db.flush()
     return LimitsResponse(
         chat_max_user_message_chars=current_limits["chat_max_user_message_chars"],

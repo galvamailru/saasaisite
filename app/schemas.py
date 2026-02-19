@@ -131,6 +131,18 @@ class LimitsUpdate(BaseModel):
     gallery_max_images_per_group: int | None = Field(None, ge=1, le=100)
 
 
+class TenantWithLimitsItem(BaseModel):
+    """Строка таблицы пользователей (тенант + его ограничения) для администратора."""
+    id: UUID
+    slug: str
+    name: str
+    chat_max_user_message_chars: int
+    user_prompt_max_chars: int
+    rag_max_documents: int
+    gallery_max_groups: int
+    gallery_max_images_per_group: int
+
+
 # Cabinet: admin bot prompt (единый системный промпт)
 class AdminPromptResponse(BaseModel):
     """Текущий системный промпт админ-бота."""

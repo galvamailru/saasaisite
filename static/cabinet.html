@@ -230,6 +230,14 @@
     .mcp-server-actions { margin-top: 0.75rem; }
     .mcp-server-actions button { padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--danger); cursor: pointer; }
     .mcp-server-actions button:hover { background: rgba(248,81,73,0.15); }
+    .limits-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.9rem; }
+    .limits-table th, .limits-table td { padding: 0.5rem 0.75rem; text-align: left; border: 1px solid var(--border); }
+    .limits-table th { background: var(--surface); font-weight: 600; }
+    .limits-table tr:hover { background: rgba(88,166,255,0.04); }
+    .limits-table .btn-edit-limits { padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; }
+    .limits-table .btn-edit-limits:hover { background: rgba(88,166,255,0.1); }
+    .limits-edit-panel { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); display: none; }
+    .limits-edit-panel.visible { display: block; }
   </style>
 </head>
 <body>
@@ -1299,49 +1307,97 @@
       async function loadUsers() {
         if (!requireAuth()) return;
         await ensureTenant();
-        const r = await fetch(base + '/' + tenantId + '/me/limits', { headers: headers() });
-        if (!r.ok) {
-          const data = await r.json().catch(() => ({}));
-          document.getElementById('content').innerHTML = '<p class="error">' + escapeHtml(data.detail || 'Ошибка загрузки ограничений.') + '</p>';
+        const rAdmin = await fetch(base + '/' + tenantId + '/me/admin/tenants', { headers: headers() });
+        if (rAdmin.status === 403) {
+          const data = await rAdmin.json().catch(() => ({}));
+          document.getElementById('content').innerHTML =
+            '<h2>Пользователи</h2><div class="panel">' +
+            '<p class="error">' + escapeHtml(data.detail || 'Доступ только для администратора.') + '</p>' +
+            '<p class="hint">Чтобы видеть таблицу тенантов и редактировать их ограничения, задайте в .env переменную <code>ADMIN_TENANT_SLUG</code> — slug тенанта, от имени которого вы входите.</p></div>';
           return;
         }
-        const limits = await r.json();
+        if (!rAdmin.ok) {
+          const data = await rAdmin.json().catch(() => ({}));
+          document.getElementById('content').innerHTML = '<p class="error">' + escapeHtml(data.detail || 'Ошибка загрузки.') + '</p>';
+          return;
+        }
+        const tenants = await rAdmin.json();
         let html = '<h2>Пользователи</h2>';
-        html += '<p class="hint">Ограничения для вашего аккаунта. Значения применяются ко всем диалогам и данным этого тенанта.</p>';
-        html += '<div class="panel"><form id="limitsForm">';
-        html += '<div class="form-row"><label>Длина сообщения в чате (символов, только для просмотра)</label>';
-        html += '<input type="number" value="' + escapeHtml(String(limits.chat_max_user_message_chars || 500)) + '" disabled></div>';
-        html += '<div class="form-row"><label for="limitUserPrompt">Максимальная длина промпта бота (символов)</label>';
-        html += '<input type="number" id="limitUserPrompt" min="1" max="100000" value="' + escapeHtml(String(limits.user_prompt_max_chars || 10000)) + '"></div>';
-        html += '<div class="form-row"><label for="limitRagDocs">Максимальное количество документов RAG</label>';
-        html += '<input type="number" id="limitRagDocs" min="1" max="100" value="' + escapeHtml(String(limits.rag_max_documents || 3)) + '"></div>';
-        html += '<div class="form-row"><label for="limitGalleryGroups">Максимальное количество галерей</label>';
-        html += '<input type="number" id="limitGalleryGroups" min="1" max="100" value="' + escapeHtml(String(limits.gallery_max_groups || 3)) + '"></div>';
-        html += '<div class="form-row"><label for="limitGalleryImages">Максимальное количество изображений в одной галерее</label>';
-        html += '<input type="number" id="limitGalleryImages" min="1" max="100" value="' + escapeHtml(String(limits.gallery_max_images_per_group || 3)) + '"></div>';
-        html += '<div class="form-row" style="margin-top:1rem;"><button type="submit">Сохранить ограничения</button></div>';
-        html += '</form></div>';
+        html += '<p class="hint">Тенанты и их ограничения. Выберите тенант и нажмите «Изменить», чтобы изменить ограничения для выбранного тенанта.</p>';
+        html += '<div class="panel"><table class="limits-table"><thead><tr>';
+        html += '<th>Тенант (slug)</th><th>Название</th>';
+        html += '<th>Симв. чата</th><th>Промпт</th><th>RAG док.</th><th>Галерей</th><th>Фото в галерее</th>';
+        html += '<th>Действие</th></tr></thead><tbody>';
+        for (var i = 0; i < tenants.length; i++) {
+          var t = tenants[i];
+          html += '<tr data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '">';
+          html += '<td>' + escapeHtml(t.slug || '') + '</td><td>' + escapeHtml(t.name || '') + '</td>';
+          html += '<td>' + escapeHtml(String(t.chat_max_user_message_chars ?? 500)) + '</td>';
+          html += '<td>' + escapeHtml(String(t.user_prompt_max_chars ?? 10000)) + '</td>';
+          html += '<td>' + escapeHtml(String(t.rag_max_documents ?? 3)) + '</td>';
+          html += '<td>' + escapeHtml(String(t.gallery_max_groups ?? 3)) + '</td>';
+          html += '<td>' + escapeHtml(String(t.gallery_max_images_per_group ?? 3)) + '</td>';
+          html += '<td><button type="button" class="btn-edit-limits">Изменить</button></td></tr>';
+        }
+        html += '</tbody></table>';
+        html += '<div id="limitsEditPanel" class="limits-edit-panel">';
+        html += '<h3 style="margin-top:0;" id="limitsEditTitle">Ограничения тенанта</h3>';
+        html += '<form id="limitsForm"><input type="hidden" id="limitsTargetTenantId" value="">';
+        html += '<div class="form-row"><label>Длина сообщения в чате (только просмотр)</label>';
+        html += '<input type="number" id="limitChatChars" disabled></div>';
+        html += '<div class="form-row"><label for="limitUserPrompt">Макс. длина промпта бота (симв.)</label>';
+        html += '<input type="number" id="limitUserPrompt" min="1" max="100000"></div>';
+        html += '<div class="form-row"><label for="limitRagDocs">Макс. документов RAG</label>';
+        html += '<input type="number" id="limitRagDocs" min="1" max="100"></div>';
+        html += '<div class="form-row"><label for="limitGalleryGroups">Макс. галерей</label>';
+        html += '<input type="number" id="limitGalleryGroups" min="1" max="100"></div>';
+        html += '<div class="form-row"><label for="limitGalleryImages">Макс. фото в галерее</label>';
+        html += '<input type="number" id="limitGalleryImages" min="1" max="100"></div>';
+        html += '<div class="form-row" style="margin-top:1rem;"><button type="submit">Сохранить ограничения</button> ';
+        html += '<button type="button" id="limitsEditCancel">Отмена</button></div></form></div></div>';
         document.getElementById('content').innerHTML = html;
-        const form = document.getElementById('limitsForm');
-        form.addEventListener('submit', async function(e) {
+
+        document.querySelectorAll('.limits-table .btn-edit-limits').forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            var row = btn.closest('tr');
+            var tid = row.getAttribute('data-tenant-id');
+            var slug = row.getAttribute('data-tenant-slug');
+            var cells = row.querySelectorAll('td');
+            document.getElementById('limitsTargetTenantId').value = tid;
+            document.getElementById('limitsEditTitle').textContent = 'Ограничения тенанта: ' + (slug || tid);
+            document.getElementById('limitChatChars').value = cells[2] ? cells[2].textContent : 500;
+            document.getElementById('limitUserPrompt').value = cells[3] ? cells[3].textContent : 10000;
+            document.getElementById('limitRagDocs').value = cells[4] ? cells[4].textContent : 3;
+            document.getElementById('limitGalleryGroups').value = cells[5] ? cells[5].textContent : 3;
+            document.getElementById('limitGalleryImages').value = cells[6] ? cells[6].textContent : 3;
+            document.getElementById('limitsEditPanel').classList.add('visible');
+          });
+        });
+        document.getElementById('limitsEditCancel').addEventListener('click', function() {
+          document.getElementById('limitsEditPanel').classList.remove('visible');
+        });
+        document.getElementById('limitsForm').addEventListener('submit', async function(e) {
           e.preventDefault();
-          const body = {
+          var targetId = document.getElementById('limitsTargetTenantId').value;
+          if (!targetId) return;
+          var body = {
             user_prompt_max_chars: Number(document.getElementById('limitUserPrompt').value) || null,
             rag_max_documents: Number(document.getElementById('limitRagDocs').value) || null,
             gallery_max_groups: Number(document.getElementById('limitGalleryGroups').value) || null,
             gallery_max_images_per_group: Number(document.getElementById('limitGalleryImages').value) || null
           };
-          const res = await fetch(base + '/' + tenantId + '/me/limits', {
+          var res = await fetch(base + '/' + tenantId + '/me/admin/tenants/' + targetId + '/limits', {
             method: 'PATCH',
             headers: Object.assign({ 'Content-Type': 'application/json' }, headers(true)),
             body: JSON.stringify(body)
           });
-          const data = await res.json().catch(() => ({}));
+          var data = await res.json().catch(() => ({}));
           if (!res.ok) {
             alert(data.detail || 'Ошибка сохранения ограничений');
             return;
           }
           alert('Ограничения сохранены.');
+          document.getElementById('limitsEditPanel').classList.remove('visible');
           loadUsers();
         });
       }

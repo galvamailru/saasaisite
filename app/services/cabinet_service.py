@@ -23,6 +23,13 @@ async def get_tenant_by_id(db: AsyncSession, tenant_id: UUID):
     return result.scalar_one_or_none()
 
 
+async def list_all_tenants(db: AsyncSession):
+    """Список всех тенантов (для страницы администратора «Пользователи»)."""
+    from app.models import Tenant
+    result = await db.execute(select(Tenant).order_by(Tenant.slug))
+    return list(result.scalars().all())
+
+
 async def list_dialogs(
     db: AsyncSession,
     tenant_id: UUID,
