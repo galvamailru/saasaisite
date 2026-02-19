@@ -1,4 +1,4 @@
-"""Chat: POST message -> SSE stream. Системный промпт из чанков. EXECUTE обрабатывается как у админ-бота."""
+"""Chat: POST message -> SSE stream. Системный промпт из чанков. Галерея и RAG через MCP (tools)."""
 import json
 from uuid import UUID
 
@@ -7,13 +7,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.llm_client import stream_chat
 from app.schemas import ChatRequest
 from app.services.chat_service import get_or_create_dialog, get_dialog_messages_for_llm, save_message
 from app.services.leads import save_lead_if_contact
 from app.services.prompt_loader import load_prompt_for_tenant
 from app.services.cabinet_service import get_tenant_by_id
-from app.services.user_execute_service import process_user_reply
+from app.services.user_chat_mcp_service import run_user_chat_with_mcp_tools
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["chat"])
 
@@ -47,22 +46,12 @@ async def _sse_stream(
         history.append({"role": "user", "content": message_text})
         await save_message(db, tenant_id, user_id, dialog.id, "user", message_text)
         await save_lead_if_contact(db, tenant_id, user_id, dialog.id, message_text)
-    full_response: list[str] = []
     try:
-        async for chunk in stream_chat(prompt, history):
-            full_response.append(chunk)
+        final_text = await run_user_chat_with_mcp_tools(tenant_id, prompt, history)
     except Exception:
-        if not is_test and full_response and dialog:
-            full_text = "".join(full_response)
-            if full_text:
-                await save_message(db, tenant_id, user_id, dialog.id, "assistant", full_text)
+        if not is_test and dialog:
+            await save_message(db, tenant_id, user_id, dialog.id, "assistant", "Ошибка при обращении к модели или инструментам.")
         raise
-    raw_text = "".join(full_response)
-    # Конвейер EXECUTE: разбор команд, вызов микросервисов, подстановка результатов
-    try:
-        final_text = await process_user_reply(tenant_id, raw_text)
-    except Exception:
-        final_text = raw_text
     # Стримим клиенту уже обработанный ответ (чунками для плавного отображения)
     for i in range(0, len(final_text), _STREAM_CHUNK):
         yield f"data: {json.dumps({'content': final_text[i:i + _STREAM_CHUNK]})}\n\n"
