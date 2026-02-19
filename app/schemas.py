@@ -134,9 +134,10 @@ class LeadResponse(BaseModel):
 
 # Cabinet: embed code for iframe
 class EmbedCodeResponse(BaseModel):
-    """URL чата для iframe и готовый HTML-код для вставки."""
+    """URL чата для iframe и готовые HTML-коды для вставки."""
     chat_url: str
     iframe_code: str
+    popup_code: str
 
 
 # Admin chat

@@ -474,7 +474,37 @@ async def get_embed_code(
         f'data-tenant-id="{tenant.id}" data-tenant-slug="{tenant.slug}" '
         f'width="400" height="600" frameborder="0" title="Чат"></iframe>'
     )
-    return EmbedCodeResponse(chat_url=chat_url, iframe_code=iframe_code)
+    popup_code = (
+        "<button id=\"chatWidgetButton\" type=\"button\" "
+        "style=\"position:fixed;bottom:24px;right:24px;z-index:9999;padding:0.6rem 1rem;border-radius:999px;"
+        "border:none;background:#00acc1;color:#fff;font-size:0.9rem;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.18);\">"
+        "Открыть чат"
+        "</button>\n"
+        "<div id=\"chatWidgetOverlay\" "
+        "style=\"position:fixed;inset:0;display:none;align-items:center;justify-content:center;"
+        "background:rgba(0,0,0,0.45);z-index:9998;\">\n"
+        "  <div style=\"width:100%;max-width:420px;height:80vh;max-height:640px;background:#fff;border-radius:16px;"
+        "overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.35);position:relative;\">\n"
+        "    <button id=\"chatWidgetClose\" type=\"button\" "
+        "style=\"position:absolute;top:8px;right:10px;border:none;background:none;font-size:20px;"
+        "cursor:pointer;z-index:2;\">×</button>\n"
+        f"    <iframe src=\"{chat_url}\" title=\"Чат\" "
+        "style=\"border:0;width:100%;height:100%;\"></iframe>\n"
+        "  </div>\n"
+        "</div>\n"
+        "<script>\n"
+        "(function(){\n"
+        "  var btn = document.getElementById('chatWidgetButton');\n"
+        "  var overlay = document.getElementById('chatWidgetOverlay');\n"
+        "  var closeBtn = document.getElementById('chatWidgetClose');\n"
+        "  if (!btn || !overlay || !closeBtn) return;\n"
+        "  btn.addEventListener('click', function(){ overlay.style.display = 'flex'; });\n"
+        "  closeBtn.addEventListener('click', function(){ overlay.style.display = 'none'; });\n"
+        "  overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.style.display = 'none'; });\n"
+        "})();\n"
+        "</script>"
+    )
+    return EmbedCodeResponse(chat_url=chat_url, iframe_code=iframe_code, popup_code=popup_code)
 
 
 # --- Прокси к микросервисам: Галерея и RAG (редактирование через UI кабинета) ---

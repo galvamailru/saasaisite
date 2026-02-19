@@ -1201,20 +1201,25 @@
           return;
         }
         const data = await r.json();
-        const code = (data.iframe_code || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const codeInline = (data.iframe_code || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const codePopup = (data.popup_code || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         document.getElementById('content').innerHTML =
           '<h2>Главная</h2>' +
           '<p class="hint">Тестируйте бота в чате и скопируйте код для вставки на сайт. Диалоги пользователей — в <a href="#" data-goto="dialogs">Мои диалоги</a>.</p>' +
           '<div class="main-page-wrap">' +
           '<div class="main-page-chat">' +
-          '<p class="hint" style="margin-bottom:0.5rem;">Чат для теста (режим теста — в БД не сохраняется)</p>' +
+          '<p class="hint" style="margin-bottom:0.5rem;">Чат для теста (режим теста — в БД не сохраняется, но помнит 10 последних сообщений)</p>' +
           '<iframe id="chatEmbedFrame" class="chat-frame" src="/' + tenantSlug + '/chat/embed" title="Чат для теста"></iframe>' +
           '</div>' +
           '<div class="main-page-embed">' +
           '<p class="hint" style="margin-bottom:0.5rem;">Вставка на ваш сайт</p>' +
           '<p class="hint">Тенант: <strong>' + escapeHtml(tenantSlug) + '</strong>. Задайте в .env <code>FRONTEND_BASE_URL</code>.</p>' +
-          '<pre class="embed-code" id="embedCodePre">' + code + '</pre>' +
-          '<div class="embed-actions"><button type="button" id="copyEmbedBtn">Копировать код</button></div>' +
+          '<p class="hint" style="margin-top:0.25rem;margin-bottom:0.25rem;"><strong>Вариант 1.</strong> Встроенный блок чата (iframe в макете страницы).</p>' +
+          '<pre class="embed-code" id="embedCodeInline">' + codeInline + '</pre>' +
+          '<div class="embed-actions" style="margin-bottom:1rem;"><button type="button" id="copyEmbedInlineBtn">Копировать код (встроенный)</button></div>' +
+          '<p class="hint" style="margin-top:0.25rem;margin-bottom:0.25rem;"><strong>Вариант 2.</strong> Всплывающее окно по кнопке (чат открывается поверх страницы).</p>' +
+          '<pre class="embed-code" id="embedCodePopup">' + codePopup + '</pre>' +
+          '<div class="embed-actions"><button type="button" id="copyEmbedPopupBtn">Копировать код (всплывающее окно)</button></div>' +
           '</div>' +
           '</div>';
         var frame = document.getElementById('chatEmbedFrame');
@@ -1229,12 +1234,20 @@
             } catch (_) {}
           });
         }
-        var copyBtn = document.getElementById('copyEmbedBtn');
-        if (copyBtn) {
-          copyBtn.addEventListener('click', function() {
-            var pre = document.getElementById('embedCodePre');
+        var copyInlineBtn = document.getElementById('copyEmbedInlineBtn');
+        if (copyInlineBtn) {
+          copyInlineBtn.addEventListener('click', function() {
+            var pre = document.getElementById('embedCodeInline');
             var text = pre ? pre.textContent : '';
-            navigator.clipboard.writeText(text).then(function() { alert('Код скопирован в буфер обмена.'); }).catch(function() { alert('Не удалось скопировать.'); });
+            navigator.clipboard.writeText(text).then(function() { alert('Код (встроенный чат) скопирован в буфер обмена.'); }).catch(function() { alert('Не удалось скопировать.'); });
+          });
+        }
+        var copyPopupBtn = document.getElementById('copyEmbedPopupBtn');
+        if (copyPopupBtn) {
+          copyPopupBtn.addEventListener('click', function() {
+            var pre = document.getElementById('embedCodePopup');
+            var text = pre ? pre.textContent : '';
+            navigator.clipboard.writeText(text).then(function() { alert('Код (всплывающее окно) скопирован в буфер обмена.'); }).catch(function() { alert('Не удалось скопировать.'); });
           });
         }
       }

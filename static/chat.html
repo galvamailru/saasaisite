@@ -515,6 +515,10 @@
         assistantEl.scrollIntoView({ behavior: 'smooth' });
         let full = '';
         let filesProcessed = null;
+        let streamedText = '';
+        let pendingBuffer = '';
+        let streamEnded = false;
+        let typewriterInterval;
         try {
           const body = { user_id: userId, message: text };
           if (dialogId) body.dialog_id = dialogId;
@@ -529,6 +533,22 @@
             assistantEl.textContent = 'Ошибка: ' + (err.detail || res.status);
             return;
           }
+
+          function drainTypewriter() {
+            if (pendingBuffer.length === 0) {
+              if (streamEnded && typewriterInterval) clearInterval(typewriterInterval);
+              return;
+            }
+            const charsPerTick = 2;
+            const take = Math.min(charsPerTick, pendingBuffer.length);
+            streamedText += pendingBuffer.slice(0, take);
+            pendingBuffer = pendingBuffer.slice(take);
+            assistantEl.textContent = streamedText;
+            assistantEl.scrollIntoView({ behavior: 'smooth' });
+          }
+
+          typewriterInterval = setInterval(drainTypewriter, 18);
+
           const reader = res.body.getReader();
           const dec = new TextDecoder();
           while (true) {
@@ -544,29 +564,41 @@
                   const obj = JSON.parse(data);
                   if (obj.content) {
                     full += obj.content;
-                    filesProcessed = linkifyAndStripFiles(full);
-                    assistantEl.innerHTML = filesProcessed.html || '—';
-                    assistantEl.scrollIntoView({ behavior: 'smooth' });
+                    pendingBuffer += obj.content;
                   }
                   if (obj.error) assistantEl.textContent = 'Ошибка: ' + obj.error;
                 } catch (_) {}
               }
             }
           }
+          streamEnded = true;
+
+          // После завершения стрима ждём, пока допечатается текст, затем форматируем HTML и добавляем карточки
           if (full) {
-            filesProcessed = linkifyAndStripFiles(full);
-            assistantEl.innerHTML = filesProcessed.html || '—';
-            filesProcessed.files.forEach(f => addContentCard(f.name, f.url));
-            if (!isTestMode) {
-              try {
-                const h = { 'X-User-Id': userId };
-                const token = localStorage.getItem('cip_access_token');
-                if (token) h['Authorization'] = 'Bearer ' + token;
-                const j = await fetch('/api/v1/tenants/' + tenantId + '/me/dialogs?limit=1', { headers: h }).then(r => r.json());
-                if (j.items && j.items[0]) dialogId = j.items[0].id;
-              } catch (_) {}
-            }
+            const waitForTypewriter = async () => {
+              if (!streamEnded || pendingBuffer.length > 0) {
+                setTimeout(waitForTypewriter, 50);
+                return;
+              }
+              if (typewriterInterval) clearInterval(typewriterInterval);
+              filesProcessed = linkifyAndStripFiles(full);
+              assistantEl.innerHTML = filesProcessed.html || '—';
+              filesProcessed.files.forEach(f => addContentCard(f.name, f.url));
+              if (!isTestMode) {
+                try {
+                  const h = { 'X-User-Id': userId };
+                  const token = localStorage.getItem('cip_access_token');
+                  if (token) h['Authorization'] = 'Bearer ' + token;
+                  const j = await fetch('/api/v1/tenants/' + tenantId + '/me/dialogs?limit=1', { headers: h }).then(r => r.json());
+                  if (j.items && j.items[0]) dialogId = j.items[0].id;
+                } catch (_) {}
+              }
+            };
+            waitForTypewriter();
           }
+        } catch (e) {
+          if (typewriterInterval) clearInterval(typewriterInterval);
+          assistantEl.textContent = 'Ошибка: ' + (e.message || 'сеть');
         } finally {
           sendBtn.disabled = false;
         }
