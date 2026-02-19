@@ -64,21 +64,19 @@ async def _fetch_galleries_and_documents(tenant_id: UUID) -> tuple[list[dict], l
     return galleries, documents
 
 
-async def _build_client_prompt_context(db: AsyncSession, tenant_id: UUID) -> str:
-    """
-    «Промпт пользователя» для проверки админ-ботом: системный промпт бота-клиента
-    + список галерей + список документов RAG тенанта. Именно этот контекст видит бот-клиент.
-    """
-    client_system_prompt = await load_prompt_for_tenant(db, tenant_id)
-    galleries, documents = await _fetch_galleries_and_documents(tenant_id)
+async def _get_client_system_prompt(db: AsyncSession, tenant_id: UUID) -> str:
+    """Системный промпт бота-клиента (для проверки админ-ботом)."""
+    prompt = await load_prompt_for_tenant(db, tenant_id)
+    return (prompt or "(пусто)").strip()
 
+
+def _build_galleries_and_rag_tail(galleries: list[dict], documents: list[dict]) -> str:
+    """
+    Блок в конце промпта бота-администратора: списки галерей и документов RAG тенанта.
+    Добавляется в конец промпта админ-бота.
+    """
     lines = [
-        "Системный промпт бота-клиента (то, что видят пользователи чата):",
-        "---",
-        (client_system_prompt or "(пусто)").strip(),
-        "---",
-        "",
-        "Список галерей изображений у тенанта (если в промпте выше нет сценария для галереи — предложи добавить):",
+        "Список галерей изображений у тенанта (если в промпте бота-клиента нет сценария для галереи — предложи добавить):",
     ]
     if not galleries:
         lines.append("  (галерей пока нет)")
@@ -231,10 +229,21 @@ async def handle_admin_message(
     if not text:
         return "Напишите, чем могу помочь: настроить промпт бота для клиентов?"
 
-    # Контекст = промпт админ-бота + «промпт пользователя» (системный промпт бота-клиента + галереи + RAG)
-    client_context = await _build_client_prompt_context(db, tenant_id)
-    system_prompt = await _get_admin_prompt_assembled(db, tenant_id)
-    system_with_context = system_prompt.rstrip() + "\n\n---\nКонтекст бота-клиента (промпт, галереи, документы):\n---\n" + client_context
+    # Промпт админ-бота; в конец промпта админ-бота добавляются списки галерей и RAG
+    admin_prompt = await _get_admin_prompt_assembled(db, tenant_id)
+    galleries, documents = await _fetch_galleries_and_documents(tenant_id)
+    admin_tail = _build_galleries_and_rag_tail(galleries, documents)
+    client_prompt = await _get_client_system_prompt(db, tenant_id)
+
+    # Итоговый system: промпт админ-бота + в конце блок галереи/RAG + промпт бота-клиента для проверки
+    system_with_context = (
+        admin_prompt.rstrip()
+        + "\n\n---\n"
+        + admin_tail
+        + "\n\n---\nПромпт бота-клиента (для проверки):\n---\n"
+        + client_prompt
+    )
+    request_context = admin_tail + "\n\n---\nПромпт бота-клиента (для проверки):\n---\n" + client_prompt
 
     # Контекстное окно: только последнее сообщение (1 сообщение)
     messages = []
@@ -264,7 +273,7 @@ async def handle_admin_message(
         "prompt_saved": saved,
         "raw_reply": raw_reply,
         "request_system": system_with_context,
-        "request_system_prompt": system_prompt.rstrip(),
-        "request_context": client_context,
+        "request_system_prompt": admin_prompt.rstrip(),
+        "request_context": request_context,
         "request_messages": messages,
     }
