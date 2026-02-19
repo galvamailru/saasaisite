@@ -50,25 +50,6 @@
       font-size: 0.85rem;
       color: #666;
     }
-    .chat-header-right {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.9rem;
-      color: #666;
-    }
-    .chat-header-right .icon-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      border: none;
-      background: #eee;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #666;
-    }
     #messages {
       flex: 1;
       overflow-y: auto;
@@ -83,6 +64,7 @@
       max-width: 85%;
       line-height: 1.45;
       word-wrap: break-word;
+      font-size: 0.875rem; /* немного мельче текста по умолчанию */
     }
     .msg.assistant {
       align-self: flex-start;
@@ -225,10 +207,6 @@
       <div class="chat-header-left">
         <h1 id="greeting">Чат</h1>
         <p id="subtitle"></p>
-      </div>
-      <div class="chat-header-right">
-        <span id="chatLabel">Чат</span>
-        <button type="button" class="icon-btn" title="Информация" aria-label="Информация">ℹ</button>
       </div>
     </header>
 
@@ -495,11 +473,16 @@
         document.getElementById('subtitle').textContent = '';
         var suggestions = Array.isArray(t.quick_reply_buttons) && t.quick_reply_buttons.length ? t.quick_reply_buttons : ['Расскажи о вас', 'Какие услуги?', 'Контакты'];
         renderPills(suggestions);
-        // Приветственное сообщение бота в самом чате (как в aichatbot)
-        var welcomeText = 'Здравствуйте! Я — помощник ' + (tenantName || 'компании') + '. Расскажите в двух словах, какая у вас задача или ситуация, и я постараюсь подсказать варианты решения.';
-        setTimeout(function () {
-          addMsg('assistant', welcomeText);
-        }, 1200);
+        // Приветственное сообщение бота, сгенерированное моделью на основе промпта
+        try {
+          const wr = await fetch('/api/v1/tenants/' + tenantId + '/chat/welcome');
+          if (wr.ok) {
+            const wdata = await wr.json();
+            if (wdata && wdata.message) {
+              addMsg('assistant', wdata.message);
+            }
+          }
+        } catch (_) {}
       }
 
       const form = document.getElementById('form');

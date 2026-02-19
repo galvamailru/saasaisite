@@ -119,3 +119,26 @@ async def post_message(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/{tenant_id:uuid}/chat/welcome")
+async def get_welcome_message(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Возвращает приветственное сообщение бота, сгенерированное согласно системному промпту."""
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    try:
+        prompt = await load_prompt_for_tenant(db, tenant_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    instruction = (
+        "Пожалуйста, поприветствуй нового пользователя, кратко представься согласно системному промпту "
+        "и в 1–2 предложениях объясни, чем ты можешь помочь. В конце задай один уточняющий вопрос, "
+        "чтобы начать диалог. Не упоминай, что это тест или что тебя только что инициализировали."
+    )
+    history = [{"role": "user", "content": instruction}]
+    text = await run_user_chat_with_mcp_tools(tenant_id, prompt, history, db)
+    return {"message": text}
