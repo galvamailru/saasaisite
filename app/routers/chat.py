@@ -101,14 +101,28 @@ async def post_message(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    if not request.message.strip():
+    message_text = (request.message or "").strip()
+    if not message_text:
         raise HTTPException(status_code=400, detail="message must not be empty")
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    # Лимит длины сообщения пользователя берём из настроек тенанта (по умолчанию 500 символов)
+    from app.routers.cabinet import _get_limits_from_settings
+
+    limits = _get_limits_from_settings(getattr(tenant, "settings", None) or {})
+    max_len = limits["chat_max_user_message_chars"]
+    if len(message_text) > max_len:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Сообщение слишком длинное. Максимум {max_len} символов.",
+        )
     return StreamingResponse(
         _sse_stream(
             tenant_id,
             request.user_id,
             request.dialog_id,
-            request.message.strip(),
+            message_text,
             db,
             is_test=request.is_test,
         ),

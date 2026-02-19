@@ -45,7 +45,7 @@
       max-width: 85%;
       line-height: 1.45;
       word-wrap: break-word;
-      font-size: 0.875rem; /* немного мельче текста по умолчанию */
+      font-size: 0.775rem; /* немного мельче текста по умолчанию */
     }
     .msg.assistant {
       align-self: flex-start;
@@ -223,6 +223,7 @@
       }
 
       let tenantId = null;
+      let chatMaxUserMessageChars = 500;
       let tenantName = '';
       let userId = localStorage.getItem('cip_user_id') || 'anon-' + Math.random().toString(36).slice(2, 12);
       localStorage.setItem('cip_user_id', userId);
@@ -454,6 +455,9 @@
         const t = await r.json();
         tenantId = t.id;
         tenantName = t.name || 'Сайт';
+        if (typeof t.chat_max_user_message_chars === 'number' && t.chat_max_user_message_chars > 0) {
+          chatMaxUserMessageChars = t.chat_max_user_message_chars;
+        }
         applyChatTheme(t.chat_theme || 'cyan');
         var suggestions = Array.isArray(t.quick_reply_buttons) && t.quick_reply_buttons.length ? t.quick_reply_buttons : ['Расскажи о вас', 'Какие услуги?', 'Контакты'];
         renderPills(suggestions);
@@ -477,6 +481,10 @@
         e.preventDefault();
         const text = input.value.trim();
         if (!text || !tenantId) return;
+        if (text.length > chatMaxUserMessageChars) {
+          alert('Сообщение слишком длинное. Максимум ' + chatMaxUserMessageChars + ' символов.');
+          return;
+        }
         input.value = '';
         addMsg('user', text);
         sendBtn.disabled = true;

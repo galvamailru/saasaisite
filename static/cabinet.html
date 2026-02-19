@@ -242,6 +242,7 @@
     <a href="#" data-page="rag">Документы</a>
     <a href="#" data-page="mcp-servers">MCP серверы</a>
     <a href="#" data-page="leads">Лиды</a>
+    <a href="#" data-page="users">Пользователи</a>
     <a href="#" data-page="profile">Профиль</a>
     <span id="authLinks"></span>
   </nav>
@@ -1114,7 +1115,7 @@
         const quickButtons = Array.isArray(p.quick_reply_buttons) ? p.quick_reply_buttons : ['Расскажи о вас', 'Какие услуги?', 'Контакты'];
 
         let html = '<h2>Профиль</h2>';
-        html += '<p class="hint">Имя и контакт. Промпт бота — в разделе <a href="#" data-goto="prompt">Промпт</a>. Оформление чата для клиентов — ниже.</p>';
+        html += '<p class="hint">Имя и контакт. Промпт бота — в разделе <a href="#" data-goto="prompt">Промпт</a>. Оформление чата для клиентов — ниже. Ограничения аккаунта отображаются ниже и редактируются в разделе «Пользователи».</p>';
         html += '<form id="profileForm" class="panel profile-form">';
         html += '<div class="form-row profile-user-id"><strong>user_id:</strong> ' + escapeHtml(p.user_id || '') + '</div>';
         html += '<div class="form-row"><label for="profileDisplayName">Имя (отображается в кабинете)</label><input type="text" id="profileDisplayName" value="' + escapeHtml(p.display_name || '') + '" maxlength="256"></div>';
@@ -1128,6 +1129,22 @@
         html += '<div class="form-row"><label>Быстрые кнопки подсказок (под полем ввода в чате)</label><ul class="quick-buttons-list" id="profileQuickButtonsList"></ul><button type="button" class="btn-add-quick" id="profileAddQuickBtn">Добавить кнопку</button></div>';
         html += '<div class="form-row" style="margin-top:1rem;"><button type="submit">Сохранить профиль</button></div>';
         html += '</form>';
+        // Блок с ограничениями (только просмотр)
+        const limits = {
+          chat_max_user_message_chars: p.chat_max_user_message_chars,
+          user_prompt_max_chars: p.user_prompt_max_chars,
+          rag_max_documents: p.rag_max_documents,
+          gallery_max_groups: p.gallery_max_groups,
+          gallery_max_images_per_group: p.gallery_max_images_per_group
+        };
+        html += '<div class="panel" style="margin-top:1.5rem;"><h3 style="margin-top:0;">Ограничения аккаунта</h3>';
+        html += '<p class="hint">Настраиваются админом в разделе «Пользователи».</p><ul class="list">';
+        html += '<li>Максимальная длина сообщения в чате: <strong>' + escapeHtml(String(limits.chat_max_user_message_chars || 500)) + '</strong> символов</li>';
+        html += '<li>Максимальная длина промпта бота: <strong>' + escapeHtml(String(limits.user_prompt_max_chars || 10000)) + '</strong> символов</li>';
+        html += '<li>Максимальное количество документов RAG: <strong>' + escapeHtml(String(limits.rag_max_documents || 3)) + '</strong></li>';
+        html += '<li>Максимальное количество галерей: <strong>' + escapeHtml(String(limits.gallery_max_groups || 3)) + '</strong></li>';
+        html += '<li>Максимальное количество изображений в галерее: <strong>' + escapeHtml(String(limits.gallery_max_images_per_group || 3)) + '</strong></li>';
+        html += '</ul></div>';
         document.getElementById('content').innerHTML = html;
 
         var listEl = document.getElementById('profileQuickButtonsList');
@@ -1279,6 +1296,56 @@
         }
       }
 
+      async function loadUsers() {
+        if (!requireAuth()) return;
+        await ensureTenant();
+        const r = await fetch(base + '/' + tenantId + '/me/limits', { headers: headers() });
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          document.getElementById('content').innerHTML = '<p class="error">' + escapeHtml(data.detail || 'Ошибка загрузки ограничений.') + '</p>';
+          return;
+        }
+        const limits = await r.json();
+        let html = '<h2>Пользователи</h2>';
+        html += '<p class="hint">Ограничения для вашего аккаунта. Значения применяются ко всем диалогам и данным этого тенанта.</p>';
+        html += '<div class="panel"><form id="limitsForm">';
+        html += '<div class="form-row"><label>Длина сообщения в чате (символов, только для просмотра)</label>';
+        html += '<input type="number" value="' + escapeHtml(String(limits.chat_max_user_message_chars || 500)) + '" disabled></div>';
+        html += '<div class="form-row"><label for="limitUserPrompt">Максимальная длина промпта бота (символов)</label>';
+        html += '<input type="number" id="limitUserPrompt" min="1" max="100000" value="' + escapeHtml(String(limits.user_prompt_max_chars || 10000)) + '"></div>';
+        html += '<div class="form-row"><label for="limitRagDocs">Максимальное количество документов RAG</label>';
+        html += '<input type="number" id="limitRagDocs" min="1" max="100" value="' + escapeHtml(String(limits.rag_max_documents || 3)) + '"></div>';
+        html += '<div class="form-row"><label for="limitGalleryGroups">Максимальное количество галерей</label>';
+        html += '<input type="number" id="limitGalleryGroups" min="1" max="100" value="' + escapeHtml(String(limits.gallery_max_groups || 3)) + '"></div>';
+        html += '<div class="form-row"><label for="limitGalleryImages">Максимальное количество изображений в одной галерее</label>';
+        html += '<input type="number" id="limitGalleryImages" min="1" max="100" value="' + escapeHtml(String(limits.gallery_max_images_per_group || 3)) + '"></div>';
+        html += '<div class="form-row" style="margin-top:1rem;"><button type="submit">Сохранить ограничения</button></div>';
+        html += '</form></div>';
+        document.getElementById('content').innerHTML = html;
+        const form = document.getElementById('limitsForm');
+        form.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          const body = {
+            user_prompt_max_chars: Number(document.getElementById('limitUserPrompt').value) || null,
+            rag_max_documents: Number(document.getElementById('limitRagDocs').value) || null,
+            gallery_max_groups: Number(document.getElementById('limitGalleryGroups').value) || null,
+            gallery_max_images_per_group: Number(document.getElementById('limitGalleryImages').value) || null
+          };
+          const res = await fetch(base + '/' + tenantId + '/me/limits', {
+            method: 'PATCH',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, headers(true)),
+            body: JSON.stringify(body)
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            alert(data.detail || 'Ошибка сохранения ограничений');
+            return;
+          }
+          alert('Ограничения сохранены.');
+          loadUsers();
+        });
+      }
+
       function route() {
         const segs = window.location.pathname.split('/').filter(Boolean);
         const page = segs[2] || 'my';
@@ -1294,6 +1361,7 @@
         else if (page === 'rag') loadRag();
         else if (page === 'mcp-servers') loadMcpServers();
         else if (page === 'leads') loadLeads();
+        else if (page === 'users') loadUsers();
         else if (page === 'profile') loadProfile();
         else loadMy();
       }

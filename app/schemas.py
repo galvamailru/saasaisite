@@ -95,6 +95,12 @@ class ProfileResponse(BaseModel):
     system_prompt: str | None = None
     chat_theme: str | None = None
     quick_reply_buttons: list[str] | None = None
+    # Ограничения тенанта (просмотр в профиле, редактирование в отдельном разделе)
+    chat_max_user_message_chars: int | None = None
+    user_prompt_max_chars: int | None = None
+    rag_max_documents: int | None = None
+    gallery_max_groups: int | None = None
+    gallery_max_images_per_group: int | None = None
 
     class Config:
         from_attributes = True
@@ -106,6 +112,23 @@ class ProfileUpdate(BaseModel):
     system_prompt: str | None = None
     chat_theme: str | None = Field(None, max_length=64)
     quick_reply_buttons: list[str] | None = None
+
+
+# Ограничения (per-tenant), для отдельного раздела управления
+class LimitsResponse(BaseModel):
+    chat_max_user_message_chars: int
+    user_prompt_max_chars: int
+    rag_max_documents: int
+    gallery_max_groups: int
+    gallery_max_images_per_group: int
+
+
+class LimitsUpdate(BaseModel):
+    # Ограничения, которые можно редактировать в разделе «Пользователи»
+    user_prompt_max_chars: int | None = Field(None, ge=1, le=100000)
+    rag_max_documents: int | None = Field(None, ge=1, le=100)
+    gallery_max_groups: int | None = Field(None, ge=1, le=100)
+    gallery_max_images_per_group: int | None = Field(None, ge=1, le=100)
 
 
 # Cabinet: admin bot prompt (единый системный промпт)

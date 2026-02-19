@@ -28,6 +28,8 @@ from app.schemas import (
     McpServerUpdate,
     McpServerResponse,
     McpToolInfo,
+    LimitsResponse,
+    LimitsUpdate,
 )
 from app.services.cabinet_service import (
     get_dialog_messages,
@@ -55,6 +57,27 @@ from app.services.admin_chat_logger import append_admin_chat_exchange
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["cabinet"])
 
+# Значения лимитов по умолчанию (могут быть переопределены в tenant.settings)
+DEFAULT_CHAT_MAX_USER_MESSAGE_CHARS = 500
+DEFAULT_USER_PROMPT_MAX_CHARS = 10000
+DEFAULT_RAG_MAX_DOCUMENTS = 3
+DEFAULT_GALLERY_MAX_GROUPS = 3
+DEFAULT_GALLERY_MAX_IMAGES_PER_GROUP = 3
+
+
+def _get_limits_from_settings(settings: dict | None) -> dict:
+    """Возвращает словарь лимитов с подстановкой значений по умолчанию."""
+    s = settings or {}
+    return {
+        "chat_max_user_message_chars": int(s.get("chat_max_user_message_chars") or DEFAULT_CHAT_MAX_USER_MESSAGE_CHARS),
+        "user_prompt_max_chars": int(s.get("user_prompt_max_chars") or DEFAULT_USER_PROMPT_MAX_CHARS),
+        "rag_max_documents": int(s.get("rag_max_documents") or DEFAULT_RAG_MAX_DOCUMENTS),
+        "gallery_max_groups": int(s.get("gallery_max_groups") or DEFAULT_GALLERY_MAX_GROUPS),
+        "gallery_max_images_per_group": int(
+            s.get("gallery_max_images_per_group") or DEFAULT_GALLERY_MAX_IMAGES_PER_GROUP
+        ),
+    }
+
 
 @router.get("/by-slug/{slug}")
 async def get_tenant_by_slug_endpoint(
@@ -65,12 +88,14 @@ async def get_tenant_by_slug_endpoint(
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     settings = tenant.settings or {}
+    limits = _get_limits_from_settings(settings)
     return {
         "id": str(tenant.id),
         "slug": tenant.slug,
         "name": tenant.name,
         "chat_theme": settings.get("chat_theme") or "cyan",
         "quick_reply_buttons": settings.get("quick_reply_buttons") or ["Расскажи о вас", "Какие услуги?", "Контакты"],
+        "chat_max_user_message_chars": limits["chat_max_user_message_chars"],
     }
 
 
@@ -283,6 +308,7 @@ async def get_user_profile(
     settings = getattr(tenant, "settings", None) or {}
     chat_theme = settings.get("chat_theme")
     quick_reply_buttons = settings.get("quick_reply_buttons")
+    limits = _get_limits_from_settings(settings)
     if not profile:
         return ProfileResponse(
             user_id=user_id,
@@ -291,6 +317,11 @@ async def get_user_profile(
             system_prompt=system_prompt,
             chat_theme=chat_theme,
             quick_reply_buttons=quick_reply_buttons,
+            chat_max_user_message_chars=limits["chat_max_user_message_chars"],
+            user_prompt_max_chars=limits["user_prompt_max_chars"],
+            rag_max_documents=limits["rag_max_documents"],
+            gallery_max_groups=limits["gallery_max_groups"],
+            gallery_max_images_per_group=limits["gallery_max_images_per_group"],
         )
     return ProfileResponse(
         user_id=profile.user_id,
@@ -299,6 +330,11 @@ async def get_user_profile(
         system_prompt=system_prompt,
         chat_theme=chat_theme,
         quick_reply_buttons=quick_reply_buttons,
+        chat_max_user_message_chars=limits["chat_max_user_message_chars"],
+        user_prompt_max_chars=limits["user_prompt_max_chars"],
+        rag_max_documents=limits["rag_max_documents"],
+        gallery_max_groups=limits["gallery_max_groups"],
+        gallery_max_images_per_group=limits["gallery_max_images_per_group"],
     )
 
 
@@ -363,7 +399,15 @@ async def patch_user_prompt(
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     if body.system_prompt is not None:
-        tenant.system_prompt = (body.system_prompt or "").strip() or None
+        text = (body.system_prompt or "").strip()
+        limits = _get_limits_from_settings(tenant.settings or {})
+        max_len = limits["user_prompt_max_chars"]
+        if len(text) > max_len:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Промпт слишком длинный. Максимум {max_len} символов.",
+            )
+        tenant.system_prompt = text or None
     await db.flush()
     return AdminPromptResponse(system_prompt=tenant.system_prompt)
 
@@ -544,8 +588,27 @@ async def gallery_create_group(
     tenant_id: UUID,
     body: dict,
     user_id: str = Depends(get_cabinet_user),
+    db: AsyncSession = Depends(get_db),
 ):
     body["tenant_id"] = str(tenant_id)
+    # Проверка лимита количества галерей
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    limits = _get_limits_from_settings(getattr(tenant, "settings", None) or {})
+    max_groups = limits["gallery_max_groups"]
+    cur_status, cur_text = await gallery_request("GET", f"/api/v1/groups?tenant_id={tenant_id}", tenant_id)
+    if cur_status == 200 and cur_text:
+        try:
+            data = json.loads(cur_text)
+            items = data if isinstance(data, list) else (data.get("items") or data.get("groups") or [])
+            if isinstance(items, list) and len(items) >= max_groups:
+                return JSONResponse(
+                    content={"detail": f"Достигнут лимит по количеству галерей ({max_groups})."},
+                    status_code=400,
+                )
+        except json.JSONDecodeError:
+            pass
     status, text = await gallery_request("POST", "/api/v1/groups", tenant_id, json_body=body)
     if status >= 400:
         return JSONResponse(content={"detail": text}, status_code=status)
@@ -584,9 +647,28 @@ async def gallery_add_image(
     request: Request,
     file: UploadFile = File(...),
     user_id: str = Depends(get_cabinet_user),
+    db: AsyncSession = Depends(get_db),
 ):
     content = await file.read()
     files = {"file": (file.filename or "image", content, file.content_type or "application/octet-stream")}
+    # Проверка лимита количества изображений в галерее
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    limits = _get_limits_from_settings(getattr(tenant, "settings", None) or {})
+    max_images = limits["gallery_max_images_per_group"]
+    cur_status, cur_text = await gallery_request("GET", f"/api/v1/groups/{group_id}", tenant_id)
+    if cur_status == 200 and cur_text:
+        try:
+            data = json.loads(cur_text)
+            images = data.get("images") or []
+            if isinstance(images, list) and len(images) >= max_images:
+                return JSONResponse(
+                    content={"detail": f"Достигнут лимит по количеству изображений в галерее ({max_images})."},
+                    status_code=400,
+                )
+        except json.JSONDecodeError:
+            pass
     status, text = await gallery_request(
         "POST", f"/api/v1/groups/{group_id}/images", tenant_id, files=files
     )
@@ -669,8 +751,29 @@ async def rag_save_document(
     tenant_id: UUID,
     body: dict,
     user_id: str = Depends(get_cabinet_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Сохраняет документ в RAG из markdown (после предпросмотра)."""
+    # Проверка лимита количества документов RAG
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    limits = _get_limits_from_settings(getattr(tenant, "settings", None) or {})
+    max_docs = limits["rag_max_documents"]
+    cur_status, cur_text = await rag_request(
+        "GET", "/api/v1/documents", params={"tenant_id": str(tenant_id)}
+    )
+    if cur_status == 200 and cur_text:
+        try:
+            data = json.loads(cur_text)
+            items = data if isinstance(data, list) else (data.get("items") or data.get("documents") or [])
+            if isinstance(items, list) and len(items) >= max_docs:
+                return JSONResponse(
+                    content={"detail": f"Достигнут лимит по количеству документов RAG ({max_docs})."},
+                    status_code=400,
+                )
+        except json.JSONDecodeError:
+            pass
     status, text = await rag_request(
         "POST",
         "/api/v1/documents/save",
@@ -688,8 +791,29 @@ async def rag_upload_document(
     file: UploadFile = File(...),
     name: str = Form(""),
     user_id: str = Depends(get_cabinet_user),
+    db: AsyncSession = Depends(get_db),
 ):
     doc_name = (name or (file.filename or "document").replace(".pdf", "")).strip() or "document"
+    # Проверка лимита количества документов RAG
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    limits = _get_limits_from_settings(getattr(tenant, "settings", None) or {})
+    max_docs = limits["rag_max_documents"]
+    cur_status, cur_text = await rag_request(
+        "GET", "/api/v1/documents", params={"tenant_id": str(tenant_id)}
+    )
+    if cur_status == 200 and cur_text:
+        try:
+            data = json.loads(cur_text)
+            items = data if isinstance(data, list) else (data.get("items") or data.get("documents") or [])
+            if isinstance(items, list) and len(items) >= max_docs:
+                return JSONResponse(
+                    content={"detail": f"Достигнут лимит по количеству документов RAG ({max_docs})."},
+                    status_code=400,
+                )
+        except json.JSONDecodeError:
+            pass
     params = {"tenant_id": str(tenant_id), "name": doc_name}
     content = await file.read()
     files = {"file": (file.filename or "doc.pdf", content, file.content_type or "application/pdf")}
@@ -813,6 +937,62 @@ async def mcp_server_delete(
         raise HTTPException(status_code=404, detail="MCP server not found")
     await delete_mcp_server(db, server)
     return Response(status_code=204)
+
+
+# Лимиты (ограничения) на уровне тенанта
+@router.get("/{tenant_id:uuid}/me/limits", response_model=LimitsResponse)
+async def get_limits(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    limits = _get_limits_from_settings(tenant.settings or {})
+    return LimitsResponse(
+        chat_max_user_message_chars=limits["chat_max_user_message_chars"],
+        user_prompt_max_chars=limits["user_prompt_max_chars"],
+        rag_max_documents=limits["rag_max_documents"],
+        gallery_max_groups=limits["gallery_max_groups"],
+        gallery_max_images_per_group=limits["gallery_max_images_per_group"],
+    )
+
+
+@router.patch("/{tenant_id:uuid}/me/limits", response_model=LimitsResponse)
+async def update_limits(
+    tenant_id: UUID,
+    body: LimitsUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    settings = dict(tenant.settings or {})
+    # Лимит 1 (chat_max_user_message_chars) редактируется только через код, здесь не трогаем.
+    current_limits = _get_limits_from_settings(settings)
+    if body.user_prompt_max_chars is not None:
+        settings["user_prompt_max_chars"] = body.user_prompt_max_chars
+        current_limits["user_prompt_max_chars"] = body.user_prompt_max_chars
+    if body.rag_max_documents is not None:
+        settings["rag_max_documents"] = body.rag_max_documents
+        current_limits["rag_max_documents"] = body.rag_max_documents
+    if body.gallery_max_groups is not None:
+        settings["gallery_max_groups"] = body.gallery_max_groups
+        current_limits["gallery_max_groups"] = body.gallery_max_groups
+    if body.gallery_max_images_per_group is not None:
+        settings["gallery_max_images_per_group"] = body.gallery_max_images_per_group
+        current_limits["gallery_max_images_per_group"] = body.gallery_max_images_per_group
+    tenant.settings = settings
+    await db.flush()
+    return LimitsResponse(
+        chat_max_user_message_chars=current_limits["chat_max_user_message_chars"],
+        user_prompt_max_chars=current_limits["user_prompt_max_chars"],
+        rag_max_documents=current_limits["rag_max_documents"],
+        gallery_max_groups=current_limits["gallery_max_groups"],
+        gallery_max_images_per_group=current_limits["gallery_max_images_per_group"],
+    )
 
 
 # Admin chat
