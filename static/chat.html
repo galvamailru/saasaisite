@@ -511,23 +511,31 @@
 
           const reader = res.body.getReader();
           const dec = new TextDecoder();
+          var sseBuffer = '';
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
-            const chunk = dec.decode(value, { stream: true });
-            const lines = chunk.split('\n');
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6).trim();
-                if (data === '[DONE]') break;
-                try {
-                  const obj = JSON.parse(data);
-                  if (obj.content) {
-                    full += obj.content;
-                    pendingBuffer += obj.content;
-                  }
-                  if (obj.error) assistantEl.textContent = 'Ошибка: ' + obj.error;
-                } catch (_) {}
+            sseBuffer += dec.decode(value, { stream: true });
+            var endIdx;
+            while ((endIdx = sseBuffer.indexOf('\n\n')) >= 0) {
+              var eventBlock = sseBuffer.slice(0, endIdx);
+              sseBuffer = sseBuffer.slice(endIdx + 2);
+              var eventLines = eventBlock.split('\n');
+              for (var ei = 0; ei < eventLines.length; ei++) {
+                var line = eventLines[ei];
+                if (line.startsWith('data: ')) {
+                  var data = line.slice(6).trim();
+                  if (data === '[DONE]') break;
+                  try {
+                    var obj = JSON.parse(data);
+                    if (obj.content) {
+                      full += obj.content;
+                      pendingBuffer += obj.content;
+                    }
+                    if (obj.error) assistantEl.textContent = 'Ошибка: ' + obj.error;
+                  } catch (_) {}
+                  break;
+                }
               }
             }
           }
