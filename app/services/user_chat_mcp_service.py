@@ -10,19 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.llm_client import chat_once_with_tools
-from app.services.mcp_client import (
-    call_gallery_tool,
-    call_mcp_tool_by_url,
-    call_rag_tool,
-    fetch_tools_from_url,
-    get_gallery_tools_for_llm,
-    get_rag_tools_for_llm,
-    GALLERY_TOOL_NAMES,
-    RAG_TOOL_NAMES,
-)
+from app.services.mcp_client import call_mcp_tool_by_url, fetch_tools_from_url
 from app.services.cabinet_service import list_mcp_servers, get_mcp_server
 
-MAX_TOOL_ROUNDS = 10
+MAX_TOOL_ROUNDS = 3
 
 
 def _inject_base_url_to_image_paths(text: str, tenant_id: UUID) -> str:
@@ -38,10 +29,8 @@ def _inject_base_url_to_image_paths(text: str, tenant_id: UUID) -> str:
 
 
 async def _get_all_tools_for_llm(tenant_id: UUID, db: AsyncSession) -> list[dict]:
-    """Объединяет tools Gallery, RAG и включённых динамических MCP-серверов из БД. У динамических имён префикс mcp_<id>__."""
+    """Загружает tools только из включённых MCP-серверов тенанта (БД). Имена с префиксом mcp_<id>__."""
     out = []
-    out.extend(await get_gallery_tools_for_llm())
-    out.extend(await get_rag_tools_for_llm())
     servers = await list_mcp_servers(db, tenant_id)
     for s in servers:
         if not s.enabled:
@@ -69,11 +58,7 @@ async def _get_all_tools_for_llm(tenant_id: UUID, db: AsyncSession) -> list[dict
 
 
 async def _call_tool(tenant_id: UUID, name: str, arguments: dict, db: AsyncSession) -> str:
-    """Маршрутизирует вызов: Gallery, RAG или динамический MCP по префиксу mcp_<id>__."""
-    if name in GALLERY_TOOL_NAMES:
-        return await call_gallery_tool(tenant_id, name, arguments)
-    if name in RAG_TOOL_NAMES:
-        return await call_rag_tool(tenant_id, name, arguments)
+    """Вызов tool только по динамическим MCP-серверам из БД (префикс mcp_<id>__)."""
     if name.startswith("mcp_") and "__" in name:
         prefix, inner_name = name.split("__", 1)
         server_id_str = prefix.replace("mcp_", "")
@@ -98,8 +83,8 @@ async def run_user_chat_with_mcp_tools(
     db: AsyncSession,
 ) -> str:
     """
-    Запускает диалог с моделью, передаёт tools от MCP (Gallery, RAG и динамические из БД).
-    При tool_calls выполняет вызовы через MCP и повторяет запрос.
+    Запускает диалог с моделью, передаёт tools только из MCP-серверов, добавленных в БД.
+    При tool_calls выполняет вызовы через MCP и повторяет запрос (до 3 раундов).
     Возвращает финальный текст ответа (без tool_calls).
     """
     tools = await _get_all_tools_for_llm(tenant_id, db)
