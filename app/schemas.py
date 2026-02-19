@@ -143,10 +143,21 @@ class TenantWithLimitsItem(BaseModel):
     gallery_max_images_per_group: int
 
 
-# Cabinet: admin bot prompt (единый системный промпт)
+# Cabinet: admin/user bot prompt responses
 class AdminPromptResponse(BaseModel):
-    """Текущий системный промпт админ-бота."""
+    """
+    Ответ для работы с промптами.
+    Для пользовательского бота:
+      - system_prompt / test_system_prompt — тестовый промпт (чат в кабинете);
+      - prod_system_prompt — боевой промпт (iframe);
+      - prev_prod_system_prompt — предыдущая версия боевого промпта (для отката).
+
+    Для админ-бота используются только system_prompt.
+    """
     system_prompt: str | None = None
+    prod_system_prompt: str | None = None
+    prev_prod_system_prompt: str | None = None
+    test_system_prompt: str | None = None
 
 
 class AdminPromptUpdate(BaseModel):

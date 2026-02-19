@@ -230,6 +230,9 @@
     .mcp-server-actions { margin-top: 0.75rem; }
     .mcp-server-actions button { padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--danger); cursor: pointer; }
     .mcp-server-actions button:hover { background: rgba(248,81,73,0.15); }
+    .pagination { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
+    .pagination button { padding: 0.25rem 0.6rem; font-size: 0.8rem; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+    .pagination button[disabled] { opacity: 0.5; cursor: default; }
     .limits-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.9rem; }
     .limits-table th, .limits-table td { padding: 0.5rem 0.75rem; text-align: left; border: 1px solid var(--border); }
     .limits-table th { background: var(--surface); font-weight: 600; }
@@ -246,11 +249,11 @@
     <a href="#" data-page="dialogs">Диалоги</a>
     <a href="#" data-page="prompt">Промпт</a>
     <a href="#" data-page="admin-prompt">Промпт админ-бота</a>
+    <a href="#" data-page="mcp-servers">MCP серверы</a>
+    <a href="#" data-page="users">Пользователи</a>
     <a href="#" data-page="gallery">Галерея</a>
     <a href="#" data-page="rag">Документы</a>
-    <a href="#" data-page="mcp-servers">MCP серверы</a>
     <a href="#" data-page="leads">Лиды</a>
-    <a href="#" data-page="users">Пользователи</a>
     <a href="#" data-page="profile">Профиль</a>
     <span id="authLinks"></span>
   </nav>
@@ -330,6 +333,11 @@
         });
       }
 
+      const DIALOGS_PAGE_SIZE = 20;
+      let dialogsPage = 1;
+      const LEADS_PAGE_SIZE = 20;
+      let leadsPage = 1;
+
       function formatDate(isoStr) {
         if (!isoStr) return '—';
         try {
@@ -338,10 +346,13 @@
         } catch (_) { return isoStr; }
       }
 
-      async function loadDialogs(dateFromVal, dateToVal) {
+      async function loadDialogs(dateFromVal, dateToVal, page) {
+        page = page || 1;
+        dialogsPage = page;
         if (!requireAuth()) return;
         await ensureTenant();
-        let url = base + '/' + tenantId + '/me/tenant/dialogs?limit=50&offset=0';
+        let offset = (page - 1) * DIALOGS_PAGE_SIZE;
+        let url = base + '/' + tenantId + '/me/tenant/dialogs?limit=' + DIALOGS_PAGE_SIZE + '&offset=' + offset;
         if (dateFromVal) url += '&date_from=' + encodeURIComponent(dateFromVal);
         if (dateToVal) url += '&date_to=' + encodeURIComponent(dateToVal);
         const r = await fetch(url, { headers: headers() });
@@ -351,14 +362,19 @@
         }
         const data = await r.json();
         const items = data.items || [];
+        const total = data.total || 0;
+        const totalPages = Math.max(1, Math.ceil(total / DIALOGS_PAGE_SIZE));
         let html = '<h2>Диалоги</h2>';
         html += '<div class="date-filter">';
         html += '<label>С: <input type="date" id="dialogsDateFrom" value="' + escapeHtml(dateFromVal || '') + '"></label>';
         html += '<label>По: <input type="date" id="dialogsDateTo" value="' + escapeHtml(dateToVal || '') + '"></label>';
         html += '<button type="button" id="dialogsFilterBtn">Применить</button>';
         html += '<button type="button" class="reset-btn" id="dialogsFilterReset">Сбросить</button>';
-        html += '<span class="hint" style="margin-left:0.5rem;">Всего: ' + (data.total || 0) + '</span>';
+        html += '<span class="hint" style="margin-left:0.5rem;">Всего: ' + total + '</span>';
         html += '</div>';
+        html += '<div class="pagination"><button type="button" id="dialogsPrev">←</button>';
+        html += '<span>Страница ' + dialogsPage + ' из ' + totalPages + '</span>';
+        html += '<button type="button" id="dialogsNext">→</button></div>';
         if (items.length === 0) {
           html += '<p class="hint">Нет диалогов за выбранный период. Диалоги посетителей с ботом через iframe появятся здесь.</p>';
         } else {
@@ -391,14 +407,36 @@
         if (filterBtn) filterBtn.addEventListener('click', function() {
           var from = document.getElementById('dialogsDateFrom').value;
           var to = document.getElementById('dialogsDateTo').value;
-          loadDialogs(from || undefined, to || undefined);
+          loadDialogs(from || undefined, to || undefined, 1);
         });
         var resetBtn = document.getElementById('dialogsFilterReset');
         if (resetBtn) resetBtn.addEventListener('click', function() {
           document.getElementById('dialogsDateFrom').value = '';
           document.getElementById('dialogsDateTo').value = '';
-          loadDialogs();
+          loadDialogs(undefined, undefined, 1);
         });
+        var prevBtn = document.getElementById('dialogsPrev');
+        var nextBtn = document.getElementById('dialogsNext');
+        if (prevBtn) {
+          prevBtn.disabled = dialogsPage <= 1;
+          prevBtn.addEventListener('click', function() {
+            if (dialogsPage > 1) {
+              var from = document.getElementById('dialogsDateFrom').value;
+              var to = document.getElementById('dialogsDateTo').value;
+              loadDialogs(from || undefined, to || undefined, dialogsPage - 1);
+            }
+          });
+        }
+        if (nextBtn) {
+          nextBtn.disabled = dialogsPage >= totalPages;
+          nextBtn.addEventListener('click', function() {
+            if (dialogsPage < totalPages) {
+              var from = document.getElementById('dialogsDateFrom').value;
+              var to = document.getElementById('dialogsDateTo').value;
+              loadDialogs(from || undefined, to || undefined, dialogsPage + 1);
+            }
+          });
+        }
       }
 
       async function loadDialogDetail(dialogId) {
@@ -429,49 +467,105 @@
           return;
         }
         const data = await rPrompt.json();
+        const testPromptVal = (data && (data.test_system_prompt != null && data.test_system_prompt !== undefined))
+          ? String(data.test_system_prompt)
+          : ((data && (data.system_prompt != null && data.system_prompt !== undefined)) ? String(data.system_prompt) : '');
+        const prodPromptVal = (data && (data.prod_system_prompt != null && data.prod_system_prompt !== undefined))
+          ? String(data.prod_system_prompt)
+          : '';
+        const prevProdPromptVal = (data && (data.prev_prod_system_prompt != null && data.prev_prod_system_prompt !== undefined))
+          ? String(data.prev_prod_system_prompt)
+          : '';
 
         let html = '<h2>Промпт чат-бота</h2>';
-        html += '<p class="hint">Единый системный промпт бота для клиентов. Если пусто — используется промпт из файла по умолчанию.</p>';
+        html += '<p class="hint">Отдельные промпты для тестового чата (в кабинете) и боевого бота (iframe на сайте).</p>';
         html += '<div class="admin-prompt-system">';
-        html += '<label>Системный промпт</label>';
-        html += '<textarea id="userSystemPrompt" placeholder="Опишите роль агента, бизнес-цель и ключевые правила..."></textarea>';
-        html += '<div style="margin-top:0.5rem;"><button type="button" id="saveUserPrompt">Сохранить</button> ';
-        html += '<button type="button" id="restoreUserPromptDefault">Восстановить из файла</button></div>';
+        html += '<label>Тестовый промпт (чат в кабинете)</label>';
+        html += '<textarea id="userTestPrompt" placeholder="Опишите роль агента, бизнес-цель и ключевые правила для тестового чата..."></textarea>';
+        html += '<div style="margin-top:0.5rem;"><button type="button" id="saveTestPrompt">Сохранить тестовый промпт</button> ';
+        html += '<button type="button" id="restoreUserPromptDefault">Загрузить из файла по умолчанию</button></div>';
         html += '</div>';
-        document.getElementById('content').innerHTML = html;
-        var userPromptVal = (data && (data.system_prompt != null && data.system_prompt !== undefined)) ? String(data.system_prompt) : '';
-        function setUserPromptValue() {
-          var el = document.getElementById('userSystemPrompt');
-          if (el) { el.value = userPromptVal; return; }
-          requestAnimationFrame(setUserPromptValue);
-        }
-        setUserPromptValue();
-        setTimeout(function() {
-          var el = document.getElementById('userSystemPrompt');
-          if (el) el.value = userPromptVal;
-        }, 100);
-        setTimeout(function() {
-          var el = document.getElementById('userSystemPrompt');
-          if (el) el.value = userPromptVal;
-        }, 250);
 
-        document.getElementById('saveUserPrompt').addEventListener('click', async () => {
-          const text = document.getElementById('userSystemPrompt').value;
+        html += '<div class="admin-prompt-system">';
+        html += '<label>Боевой промпт (бот в iframe на сайте)</label>';
+        html += '<textarea id="userProdPrompt" placeholder="Промпт боевого чат-бота для клиентов..."></textarea>';
+        html += '<div style="margin-top:0.5rem;"><button type="button" id="saveProdPrompt">Сохранить боевой промпт</button> ';
+        html += '<button type="button" id="copyTestToProd">Скопировать тестовый → боевой (с бэкапом)</button> ';
+        html += '<button type="button" id="rollbackProdPrompt"' + (prevProdPromptVal ? '' : ' disabled') + '>Откатить боевой к предыдущей версии</button></div>';
+        if (prevProdPromptVal) {
+          html += '<p class="hint" style="margin-top:0.5rem;">Есть сохранённая предыдущая версия боевого промпта. Кнопка отката поменяет местами текущий и предыдущий варианты.</p>';
+        }
+        html += '</div>';
+
+        document.getElementById('content').innerHTML = html;
+
+        (function setPromptValues() {
+          var testEl = document.getElementById('userTestPrompt');
+          var prodEl = document.getElementById('userProdPrompt');
+          if (testEl) testEl.value = testPromptVal || '';
+          if (prodEl) prodEl.value = prodPromptVal || '';
+        })();
+
+        document.getElementById('saveTestPrompt').addEventListener('click', async () => {
+          const text = document.getElementById('userTestPrompt').value;
           const res = await fetch(base + '/' + tenantId + '/me/prompt', {
             method: 'PATCH',
             headers: headers(true),
             body: JSON.stringify({ system_prompt: text })
           });
-          if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
-          alert('Промпт сохранён.');
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) { alert(j.detail || 'Ошибка сохранения тестового промпта'); return; }
+          alert('Тестовый промпт сохранён.');
           resetAdminChat();
         });
 
+        document.getElementById('saveProdPrompt').addEventListener('click', async () => {
+          const text = document.getElementById('userProdPrompt').value;
+          const res = await fetch(base + '/' + tenantId + '/me/prompt/prod', {
+            method: 'PATCH',
+            headers: headers(true),
+            body: JSON.stringify({ system_prompt: text })
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) { alert(j.detail || 'Ошибка сохранения боевого промпта'); return; }
+          alert('Боевой промпт сохранён.');
+          resetAdminChat();
+          loadUserPrompt();
+        });
+
+        document.getElementById('copyTestToProd').addEventListener('click', async () => {
+          if (!confirm('Скопировать тестовый промпт в боевой и сохранить предыдущую версию боевого промпта?')) return;
+          const res = await fetch(base + '/' + tenantId + '/me/prompt/copy-test-to-prod', {
+            method: 'POST',
+            headers: headers(true)
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) { alert(j.detail || 'Ошибка копирования промпта'); return; }
+          alert('Тестовый промпт скопирован в боевой. Предыдущая версия сохранена для отката.');
+          resetAdminChat();
+          loadUserPrompt();
+        });
+
+        document.getElementById('rollbackProdPrompt').addEventListener('click', async function() {
+          if (this.disabled) return;
+          if (!confirm('Откатить боевой промпт к предыдущей версии и сохранить текущий как резервный?')) return;
+          const res = await fetch(base + '/' + tenantId + '/me/prompt/rollback-prod', {
+            method: 'POST',
+            headers: headers(true)
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) { alert(j.detail || 'Ошибка отката промпта'); return; }
+          alert('Боевой промпт откатан к предыдущей версии.');
+          resetAdminChat();
+          loadUserPrompt();
+        });
+
         document.getElementById('restoreUserPromptDefault').addEventListener('click', async () => {
+          if (!confirm('Загрузить промпт из файла по умолчанию в тестовый промпт и заменить текущий тестовый?')) return;
           const rDef = await fetch(base + '/' + tenantId + '/me/prompt/default', { headers: headers() });
           if (!rDef.ok) { const j = await rDef.json().catch(() => ({})); alert(j.detail || 'Ошибка'); return; }
           const defData = await rDef.json();
-          document.getElementById('userSystemPrompt').value = defData.system_prompt || '';
+          document.getElementById('userTestPrompt').value = defData.test_system_prompt || defData.system_prompt || '';
         });
       }
 
@@ -767,10 +861,13 @@
         return parts.join('');
       }
 
-      async function loadLeads(dateFromVal, dateToVal) {
+      async function loadLeads(dateFromVal, dateToVal, page) {
+        page = page || 1;
+        leadsPage = page;
         if (!requireAuth()) return;
         await ensureTenant();
-        let url = base + '/' + tenantId + '/me/leads?limit=50&offset=0';
+        let offset = (page - 1) * LEADS_PAGE_SIZE;
+        let url = base + '/' + tenantId + '/me/leads?limit=' + LEADS_PAGE_SIZE + '&offset=' + offset;
         if (dateFromVal) url += '&date_from=' + encodeURIComponent(dateFromVal);
         if (dateToVal) url += '&date_to=' + encodeURIComponent(dateToVal);
         const r = await fetch(url, { headers: headers() });
@@ -820,14 +917,41 @@
         });
         var filterBtn = document.getElementById('leadsFilterBtn');
         if (filterBtn) filterBtn.addEventListener('click', function() {
-          loadLeads(document.getElementById('leadsDateFrom').value || undefined, document.getElementById('leadsDateTo').value || undefined);
+          loadLeads(document.getElementById('leadsDateFrom').value || undefined, document.getElementById('leadsDateTo').value || undefined, 1);
         });
         var resetBtn = document.getElementById('leadsFilterReset');
         if (resetBtn) resetBtn.addEventListener('click', function() {
           document.getElementById('leadsDateFrom').value = '';
           document.getElementById('leadsDateTo').value = '';
-          loadLeads();
+          loadLeads(undefined, undefined, 1);
         });
+        var hasNext = leads.length === LEADS_PAGE_SIZE;
+        var pagHtml = '<div class="pagination"><button type="button" id="leadsPrev">←</button>';
+        pagHtml += '<span>Страница ' + leadsPage + '</span>';
+        pagHtml += '<button type="button" id="leadsNext">→</button></div>';
+        document.getElementById('content').insertAdjacentHTML('beforeend', pagHtml);
+        var prevBtn = document.getElementById('leadsPrev');
+        var nextBtn = document.getElementById('leadsNext');
+        if (prevBtn) {
+          prevBtn.disabled = leadsPage <= 1;
+          prevBtn.addEventListener('click', function() {
+            if (leadsPage > 1) {
+              var from = document.getElementById('leadsDateFrom').value;
+              var to = document.getElementById('leadsDateTo').value;
+              loadLeads(from || undefined, to || undefined, leadsPage - 1);
+            }
+          });
+        }
+        if (nextBtn) {
+          nextBtn.disabled = !hasNext;
+          nextBtn.addEventListener('click', function() {
+            if (hasNext) {
+              var from = document.getElementById('leadsDateFrom').value;
+              var to = document.getElementById('leadsDateTo').value;
+              loadLeads(from || undefined, to || undefined, leadsPage + 1);
+            }
+          });
+        }
       }
 
       async function loadGallery() {

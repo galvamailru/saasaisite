@@ -378,6 +378,21 @@ async def update_user_profile(
 
 
 # Промпт пользовательского бота (единый системный промпт): текущее значение и обновление
+def _build_user_prompt_response(tenant) -> AdminPromptResponse:
+    settings = getattr(tenant, "settings", None) or {}
+    prod = (getattr(tenant, "system_prompt", None) or "").strip() or None
+    test = (settings.get("test_system_prompt") or "").strip()
+    if not test:
+        test = prod or None
+    prev_prod = (settings.get("prod_system_prompt_prev") or "").strip() or None
+    return AdminPromptResponse(
+        system_prompt=test,
+        test_system_prompt=test,
+        prod_system_prompt=prod,
+        prev_prod_system_prompt=prev_prod,
+    )
+
+
 @router.get("/{tenant_id:uuid}/me/prompt", response_model=AdminPromptResponse)
 async def get_user_prompt(
     tenant_id: UUID,
@@ -387,8 +402,7 @@ async def get_user_prompt(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    system_prompt = getattr(tenant, "system_prompt", None) or None
-    return AdminPromptResponse(system_prompt=system_prompt)
+    return _build_user_prompt_response(tenant)
 
 
 @router.patch("/{tenant_id:uuid}/me/prompt", response_model=AdminPromptResponse)
@@ -410,9 +424,11 @@ async def patch_user_prompt(
                 status_code=400,
                 detail=f"Промпт слишком длинный. Максимум {max_len} символов.",
             )
-        tenant.system_prompt = text or None
+        settings = dict(tenant.settings or {})
+        settings["test_system_prompt"] = text or None
+        tenant.settings = settings
     await db.flush()
-    return AdminPromptResponse(system_prompt=tenant.system_prompt)
+    return _build_user_prompt_response(tenant)
 
 
 # Промпт пользовательского бота: значение по умолчанию из файла (для кнопки «Восстановить из файла»)
@@ -429,7 +445,74 @@ async def get_user_prompt_default(
         system_prompt = load_prompt()
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Default prompt file not found")
-    return AdminPromptResponse(system_prompt=system_prompt)
+    # Этот endpoint используется как источник шаблона для тестового промпта
+    return AdminPromptResponse(system_prompt=system_prompt, test_system_prompt=system_prompt)
+
+
+@router.patch("/{tenant_id:uuid}/me/prompt/prod", response_model=AdminPromptResponse)
+async def patch_user_prompt_prod(
+    tenant_id: UUID,
+    body: AdminPromptUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    if body.system_prompt is not None:
+        text = (body.system_prompt or "").strip()
+        settings = dict(tenant.settings or {})
+        prev = (getattr(tenant, "system_prompt", None) or "").strip() or None
+        if prev and prev != text:
+            settings["prod_system_prompt_prev"] = prev
+        tenant.system_prompt = text or None
+        tenant.settings = settings
+    await db.flush()
+    return _build_user_prompt_response(tenant)
+
+
+@router.post("/{tenant_id:uuid}/me/prompt/copy-test-to-prod", response_model=AdminPromptResponse)
+async def copy_test_prompt_to_prod(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    settings = dict(tenant.settings or {})
+    test = (settings.get("test_system_prompt") or "").strip()
+    if not test:
+        raise HTTPException(status_code=400, detail="Тестовый промпт пуст. Сначала задайте его.")
+    prev = (getattr(tenant, "system_prompt", None) or "").strip() or None
+    if prev:
+        settings["prod_system_prompt_prev"] = prev
+    tenant.system_prompt = test
+    tenant.settings = settings
+    await db.flush()
+    return _build_user_prompt_response(tenant)
+
+
+@router.post("/{tenant_id:uuid}/me/prompt/rollback-prod", response_model=AdminPromptResponse)
+async def rollback_prod_prompt(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    settings = dict(tenant.settings or {})
+    prev = (settings.get("prod_system_prompt_prev") or "").strip()
+    if not prev:
+        raise HTTPException(status_code=400, detail="Нет сохранённой предыдущей версии промпта для отката.")
+    current = (getattr(tenant, "system_prompt", None) or "").strip() or None
+    # Меняем местами текущий и предыдущий, чтобы можно было откатиться обратно при необходимости
+    tenant.system_prompt = prev
+    settings["prod_system_prompt_prev"] = current
+    tenant.settings = settings
+    await db.flush()
+    return _build_user_prompt_response(tenant)
 
 
 # Admin bot prompt (единый системный промпт)

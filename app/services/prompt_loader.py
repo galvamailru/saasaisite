@@ -31,6 +31,29 @@ async def load_prompt_for_tenant(db: AsyncSession, tenant_id: UUID) -> str:
     return load_prompt()
 
 
+async def load_test_prompt_for_tenant(db: AsyncSession, tenant_id: UUID) -> str:
+    """
+    Тестовый промпт пользовательского чат-бота.
+    Берётся из tenant.settings['test_system_prompt'], если есть, иначе — как боевой.
+    """
+    from app.models import Tenant
+
+    r = await db.execute(select(Tenant.settings, Tenant.system_prompt).where(Tenant.id == tenant_id))
+    row = r.one_or_none()
+    if not row:
+        return await load_prompt_for_tenant(db, tenant_id)
+    settings, prod = row
+    test = ""
+    if isinstance(settings, dict):
+        test = (settings.get("test_system_prompt") or "").strip()
+    if test:
+        return test
+    base = (prod or "").strip()
+    if base:
+        return base
+    return load_prompt()
+
+
 def load_admin_prompt(base_dir: Path | None = None) -> str:
     """Промпт агента в личном кабинете."""
     path = settings.get_admin_prompt_path(base_dir)

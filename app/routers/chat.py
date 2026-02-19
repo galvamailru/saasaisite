@@ -11,7 +11,7 @@ from app.database import get_db
 from app.schemas import ChatRequest
 from app.services.chat_service import get_or_create_dialog, get_dialog_messages_for_llm, save_message
 from app.services.leads import save_lead_if_contact
-from app.services.prompt_loader import load_prompt_for_tenant
+from app.services.prompt_loader import load_prompt_for_tenant, load_test_prompt_for_tenant
 from app.services.cabinet_service import get_tenant_by_id
 from app.services.user_chat_mcp_service import run_user_chat_with_mcp_tools
 
@@ -51,7 +51,10 @@ async def _sse_stream(
         yield f"data: {json.dumps({'error': 'tenant not found'})}\n\n"
         return
     try:
-        prompt = await load_prompt_for_tenant(db, tenant_id)
+        if is_test:
+            prompt = await load_test_prompt_for_tenant(db, tenant_id)
+        else:
+            prompt = await load_prompt_for_tenant(db, tenant_id)
     except FileNotFoundError as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
         return
