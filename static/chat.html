@@ -536,8 +536,7 @@
                     if (obj.content) {
                       full += obj.content;
                       if (!noTypewriter) {
-                        var trimmedFull = full.replace(/^\s+/, '');
-                        if (trimmedFull.indexOf('[HTML]') === 0) {
+                        if (full.indexOf('[HTML]') !== -1) {
                           noTypewriter = true;
                           pendingBuffer = '';
                           streamedText = '';
