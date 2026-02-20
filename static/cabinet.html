@@ -1837,6 +1837,7 @@
         const page = segs[2] || 'my';
         setLinks();
         renderAuthLinks();
+        if (localStorage.getItem('cip_access_token')) ensureAdminFlag();
         if (page === 'my' || page === 'embed') loadMy();
         else if (page === 'dialogs' && segs[3]) loadDialogDetail(segs[3]);
         else if (page === 'dialogs') loadDialogs();
@@ -1870,7 +1871,6 @@
       });
       window.onpopstate = route;
       route();
-      ensureAdminFlag();
     })();
   </script>
 </body>
