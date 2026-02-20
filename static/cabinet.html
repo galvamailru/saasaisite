@@ -123,6 +123,10 @@
     .chat-msg { margin: 0.5rem 0; font-size: 0.9rem; }
     .chat-msg.user { color: var(--accent); }
     .chat-msg.assistant { color: var(--text-muted); }
+    /* Страница «Диалог» (/my/dialogs/:id): текст сообщений — контраст AAA (вместо #333) */
+    #content .list .chat-msg,
+    #content .list .dialog-msg-body { color: var(--text); }
+    #content .list .chat-msg.user { color: var(--accent); }
     .chat-input { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
     .chat-input textarea { flex: 1; min-height: 60px; resize: vertical; }
     .date-filter { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.25rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }

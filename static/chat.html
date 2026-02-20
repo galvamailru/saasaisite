@@ -12,6 +12,12 @@
     body.chat-theme-purple { --chat-accent: #7b1fa2; --chat-accent-hover: #6a1b9a; }
     body.chat-theme-orange { --chat-accent: #e65100; --chat-accent-hover: #bf360c; }
     body.chat-theme-teal { --chat-accent: #00695c; --chat-accent-hover: #004d40; }
+    html.chat-embed, body.chat-embed {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
     body {
       margin: 0;
       padding: 2rem 1rem;
@@ -31,9 +37,19 @@
       flex-direction: column;
       min-height: 80vh;
     }
+    body.chat-embed .chat-card {
+      max-width: none;
+      margin: 0;
+      min-height: 0;
+      height: 100%;
+      border-radius: 0;
+      box-shadow: none;
+    }
     #messages {
       flex: 1;
+      min-height: 0;
       overflow-y: auto;
+      overflow-x: hidden;
       padding: 1rem 1.25rem;
       display: flex;
       flex-direction: column;
@@ -45,7 +61,9 @@
       max-width: 85%;
       line-height: 1.45;
       word-wrap: break-word;
-      font-size: 0.775rem; /* немного мельче текста по умолчанию */
+      overflow-wrap: break-word;
+      font-size: 0.775rem;
+      min-width: 0;
     }
     .msg.assistant {
       align-self: flex-start;
@@ -77,6 +95,7 @@
       30% { opacity: 1; transform: translateY(-2px); }
     }
     .input-area {
+      flex-shrink: 0;
       padding: 1rem 1.25rem;
       border-top: 1px solid #eee;
       background: #fff;
@@ -121,6 +140,7 @@
     }
     #input:focus { border-color: var(--chat-accent, #00acc1); }
     #send {
+      flex-shrink: 0;
       padding: 0.75rem 1.5rem;
       border: none;
       border-radius: 24px;
@@ -157,6 +177,10 @@
       if (!tenantSlug) {
         document.getElementById('messages').innerHTML = '<p style="padding:1rem">Неверный URL. Ожидается /{tenant_slug}/chat или /{tenant_slug}/chat/embed</p>';
         return;
+      }
+      if (path.indexOf('/embed') !== -1) {
+        document.documentElement.classList.add('chat-embed');
+        document.body.classList.add('chat-embed');
       }
 
       let tenantId = null;
