@@ -1,8 +1,19 @@
 """FastAPI app: chat, cabinet API, static pages."""
+import logging
+import sys
 import traceback
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
+
+# Логи приложения (сброс пароля, отправка писем и т.д.) в stderr — видны в docker logs
+_app_log = logging.getLogger("app")
+_app_log.setLevel(logging.INFO)
+if not _app_log.handlers:
+    _h = logging.StreamHandler(sys.stderr)
+    _h.setFormatter(logging.Formatter("%(levelname)s: %(name)s: %(message)s"))
+    _app_log.addHandler(_h)
+_app_log.propagate = False
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
