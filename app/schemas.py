@@ -52,6 +52,11 @@ class ChatRequest(BaseModel):
     is_test: bool = False  # режим теста в админке — не сохранять диалоги/сообщения в БД
 
 
+class ChatMessageResponse(BaseModel):
+    """Ответ одним сообщением (для клиентов без SSE)."""
+    reply: str
+
+
 # Cabinet: dialogs
 class DialogListItem(BaseModel):
     id: UUID
@@ -118,6 +123,8 @@ class ProfileResponse(BaseModel):
     rag_max_documents: int | None = None
     gallery_max_groups: int | None = None
     gallery_max_images_per_group: int | None = None
+    # Ссылка для регистрации webhook бота в Telegram (POST сюда получает обновления)
+    telegram_webhook_url: str | None = None
 
     class Config:
         from_attributes = True
@@ -129,6 +136,7 @@ class ProfileUpdate(BaseModel):
     system_prompt: str | None = None
     chat_theme: str | None = Field(None, max_length=64)
     quick_reply_buttons: list[str] | None = None
+    telegram_bot_token: str | None = Field(None, max_length=256)  # токен от BotFather; сохраняется в tenant.settings
 
 
 # Ограничения (per-tenant), для отдельного раздела управления

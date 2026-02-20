@@ -63,6 +63,10 @@
     .profile-form .quick-buttons-list .btn-remove:hover { color: #c0392b; border-color: #c0392b; }
     .profile-form .btn-add-quick { margin-top: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.85rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; }
     .profile-form .btn-add-quick:hover { border-color: var(--accent); color: var(--accent); }
+    .profile-form .profile-telegram-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .profile-form .profile-telegram-url-input { flex: 1; min-width: 200px; max-width: 100%; }
+    .profile-form .btn-copy-telegram { padding: 0.5rem 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-size: 0.9rem; white-space: nowrap; }
+    .profile-form .btn-copy-telegram:hover { border-color: var(--accent); color: var(--accent); }
     .chunk-card, .dialog-card, .leads-list .lead-item { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; margin-bottom: 0.75rem; }
     .chunk-question-label { font-size: 0.75rem; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.35rem; font-family: var(--font-mono); }
     .chunk-card .chunk-question-input, .chunk-card textarea, .admin-prompt-system textarea {
@@ -1463,6 +1467,11 @@
         html += '<div class="form-row profile-user-id"><strong>user_id:</strong> ' + escapeHtml(p.user_id || '') + '</div>';
         html += '<div class="form-row"><label for="profileDisplayName">Имя (отображается в кабинете)</label><input type="text" id="profileDisplayName" value="' + escapeHtml(p.display_name || '') + '" maxlength="256"></div>';
         html += '<div class="form-row"><label for="profileContact">Контакт (email / телефон / мессенджер)</label><input type="text" id="profileContact" value="' + escapeHtml(p.contact || '') + '" maxlength="256"></div>';
+        var telegramUrl = (p.telegram_webhook_url || '').trim();
+        html += '<div class="form-row"><label>Ссылка для Telegram (webhook)</label>';
+        html += '<div class="profile-telegram-row"><input type="text" id="profileTelegramWebhookUrl" readonly value="' + escapeHtml(telegramUrl) + '" class="profile-telegram-url-input"><button type="button" id="profileCopyTelegramBtn" class="btn-copy-telegram">Копировать</button></div>';
+        html += '<p class="hint" style="margin-top:0.35rem;">Укажите эту ссылку в setWebhook для вашего бота. Ниже задайте токен бота (от @BotFather), чтобы чат мог отвечать в Telegram.</p></div>';
+        html += '<div class="form-row"><label for="profileTelegramBotToken">Токен бота Telegram (от BotFather)</label><input type="password" id="profileTelegramBotToken" value="" placeholder="Оставьте пустым, чтобы не менять" maxlength="256" autocomplete="off"></div>';
         html += '<div class="form-row"><label>Цветовая гамма чата бота</label><div class="theme-options" id="profileThemeOptions">';
         CHAT_THEMES.forEach(function(t) {
           var sel = t.id === currentTheme ? ' selected' : '';
@@ -1515,6 +1524,25 @@
         quickButtons.forEach(function(t) { addQuickRow(t); });
         document.getElementById('profileAddQuickBtn').onclick = function() { addQuickRow(''); };
 
+        var copyTelegramBtn = document.getElementById('profileCopyTelegramBtn');
+        var telegramUrlInput = document.getElementById('profileTelegramWebhookUrl');
+        if (copyTelegramBtn && telegramUrlInput) {
+          copyTelegramBtn.addEventListener('click', function() {
+            var url = (telegramUrlInput.value || '').trim();
+            if (!url) { alert('Ссылка для Telegram не задана. Настройте PUBLIC_API_BASE_URL или FRONTEND_BASE_URL на сервере.'); return; }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(url).then(function() {
+                var t = copyTelegramBtn.textContent;
+                copyTelegramBtn.textContent = 'Скопировано';
+                setTimeout(function() { copyTelegramBtn.textContent = t; }, 2000);
+              }).catch(function() { alert('Не удалось скопировать'); });
+            } else {
+              telegramUrlInput.select();
+              try { document.execCommand('copy'); copyTelegramBtn.textContent = 'Скопировано'; setTimeout(function() { copyTelegramBtn.textContent = 'Копировать'; }, 2000); } catch (e) { alert('Скопируйте ссылку вручную'); }
+            }
+          });
+        }
+
         document.getElementById('profileThemeOptions').querySelectorAll('.theme-option').forEach(function(el) {
           el.addEventListener('click', function() {
             document.getElementById('profileThemeOptions').querySelectorAll('.theme-option').forEach(function(o) { o.classList.remove('selected'); });
@@ -1531,12 +1559,14 @@
             var v = (inp.value || '').trim();
             if (v) quickArr.push(v);
           });
+          var tokenVal = (document.getElementById('profileTelegramBotToken') || {}).value || '';
           const body = {
             display_name: document.getElementById('profileDisplayName').value.trim() || null,
             contact: document.getElementById('profileContact').value.trim() || null,
             chat_theme: (form.querySelector('input[name="chat_theme"]:checked') || {}).value || 'cyan',
             quick_reply_buttons: quickArr.length ? quickArr : null
           };
+          if (tokenVal.trim()) body.telegram_bot_token = tokenVal.trim();
           const res = await fetch(base + '/' + tenantId + '/me/profile', {
             method: 'PATCH',
             headers: Object.assign({ 'Content-Type': 'application/json' }, headers(true)),

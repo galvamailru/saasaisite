@@ -98,7 +98,9 @@ docker run -d -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minioadmin -e MINIO_R
 
 ## Маршруты
 
-- **Чат:** `POST /api/v1/tenants/{tenant_id}/chat` — тело: `{ "user_id", "message", "dialog_id?" }` → SSE.
+- **Чат:** `POST /api/v1/tenants/{tenant_id}/chat` — тело: `{ "user_id", "message", "dialog_id?" }` → SSE.  
+  `POST .../chat/message` — то же, ответ одним JSON: `{ "reply": "..." }`.  
+  **Telegram:** только через webhook — `POST .../telegram/webhook` (см. [TELEGRAM.md](TELEGRAM.md)).
 - **Кабинет (JWT):**  
   - `GET /api/v1/tenants/by-slug/{slug}` — тенант по slug.  
   - `GET /api/v1/tenants/{tenant_id}/me/dialogs`, `GET .../me/dialogs/{dialog_id}` — диалоги.  

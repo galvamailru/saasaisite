@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = "noreply@example.com"
     frontend_base_url: str = "http://localhost:8000"  # for confirmation link
+    # Публичный URL API (для webhook Telegram). Если пусто — используется frontend_base_url.
+    public_api_base_url: str = ""
 
     # Микросервисы (вызов из пользовательского чата по EXECUTE)
     gallery_service_url: str = "http://localhost:8010"

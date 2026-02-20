@@ -382,6 +382,9 @@ async def get_user_profile(
     role = getattr(user, "role", None) or None
     display_name = profile.display_name if profile else None
     contact = profile.contact if profile else None
+    from app.config import settings as _settings
+    _base = (_settings.public_api_base_url or _settings.frontend_base_url or "").strip().rstrip("/")
+    telegram_webhook_url = f"{_base}/api/v1/tenants/{tenant_id}/telegram/webhook" if _base else None
     if not profile:
         return ProfileResponse(
             user_id=user_id,
@@ -396,6 +399,7 @@ async def get_user_profile(
             rag_max_documents=limits["rag_max_documents"],
             gallery_max_groups=limits["gallery_max_groups"],
             gallery_max_images_per_group=limits["gallery_max_images_per_group"],
+            telegram_webhook_url=telegram_webhook_url,
         )
     return ProfileResponse(
         user_id=profile.user_id,
@@ -410,6 +414,7 @@ async def get_user_profile(
         rag_max_documents=limits["rag_max_documents"],
         gallery_max_groups=limits["gallery_max_groups"],
         gallery_max_images_per_group=limits["gallery_max_images_per_group"],
+        telegram_webhook_url=telegram_webhook_url,
     )
 
 
@@ -430,23 +435,35 @@ async def update_user_profile(
     )
     if body.system_prompt is not None:
         tenant.system_prompt = (body.system_prompt or "").strip() or None
-    if body.chat_theme is not None or body.quick_reply_buttons is not None:
+    if body.chat_theme is not None or body.quick_reply_buttons is not None or body.telegram_bot_token is not None:
         settings = dict(tenant.settings or {})
         if body.chat_theme is not None:
             settings["chat_theme"] = (body.chat_theme or "").strip() or None
         if body.quick_reply_buttons is not None:
             settings["quick_reply_buttons"] = [str(s).strip() for s in body.quick_reply_buttons if str(s).strip()]
+        if body.telegram_bot_token is not None:
+            settings["telegram_bot_token"] = (body.telegram_bot_token or "").strip() or None
         tenant.settings = settings
         flag_modified(tenant, "settings")
     await db.flush()
     settings = tenant.settings or {}
+    _base = (app_settings.public_api_base_url or app_settings.frontend_base_url or "").strip().rstrip("/")
+    telegram_webhook_url = f"{_base}/api/v1/tenants/{tenant_id}/telegram/webhook" if _base else None
+    limits = _get_limits_from_settings(settings)
     return ProfileResponse(
         user_id=profile.user_id,
+        role=None,
         display_name=profile.display_name,
         contact=profile.contact,
         system_prompt=tenant.system_prompt,
         chat_theme=settings.get("chat_theme"),
         quick_reply_buttons=settings.get("quick_reply_buttons"),
+        telegram_webhook_url=telegram_webhook_url,
+        chat_max_user_message_chars=limits["chat_max_user_message_chars"],
+        user_prompt_max_chars=limits["user_prompt_max_chars"],
+        rag_max_documents=limits["rag_max_documents"],
+        gallery_max_groups=limits["gallery_max_groups"],
+        gallery_max_images_per_group=limits["gallery_max_images_per_group"],
     )
 
 
