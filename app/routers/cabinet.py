@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -372,6 +373,7 @@ async def update_user_profile(
         if body.quick_reply_buttons is not None:
             settings["quick_reply_buttons"] = [str(s).strip() for s in body.quick_reply_buttons if str(s).strip()]
         tenant.settings = settings
+        flag_modified(tenant, "settings")
     await db.flush()
     settings = tenant.settings or {}
     return ProfileResponse(
@@ -436,6 +438,7 @@ async def patch_user_prompt(
         settings = dict(tenant.settings or {})
         settings["test_system_prompt"] = text or None
         tenant.settings = settings
+        flag_modified(tenant, "settings")
     await db.flush()
     return _build_user_prompt_response(tenant)
 
@@ -492,6 +495,7 @@ async def patch_user_prompt_prod(
             settings["prod_system_prompt_prev"] = prev
         tenant.system_prompt = text or None
         tenant.settings = settings
+        flag_modified(tenant, "settings")
     await db.flush()
     return _build_user_prompt_response(tenant)
 
@@ -514,6 +518,7 @@ async def copy_test_prompt_to_prod(
         settings["prod_system_prompt_prev"] = prev
     tenant.system_prompt = test
     tenant.settings = settings
+    flag_modified(tenant, "settings")
     await db.flush()
     return _build_user_prompt_response(tenant)
 
@@ -536,6 +541,7 @@ async def rollback_prod_prompt(
     tenant.system_prompt = prev
     settings["prod_system_prompt_prev"] = current
     tenant.settings = settings
+    flag_modified(tenant, "settings")
     await db.flush()
     return _build_user_prompt_response(tenant)
 
@@ -1096,6 +1102,7 @@ async def update_limits(
         settings["gallery_max_images_per_group"] = body.gallery_max_images_per_group
         current_limits["gallery_max_images_per_group"] = body.gallery_max_images_per_group
     tenant.settings = settings
+    flag_modified(tenant, "settings")
     await db.flush()
     return LimitsResponse(
         chat_max_user_message_chars=current_limits["chat_max_user_message_chars"],
