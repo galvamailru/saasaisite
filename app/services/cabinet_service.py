@@ -110,10 +110,14 @@ async def list_tenant_dialogs(
     date_to: date | None = None,
     only_new: bool = False,
     only_leads: bool = False,
+    include_archived: bool = False,
 ) -> tuple[int, list]:
-    """Все диалоги тенанта. Просмотренность — по текущему пользователю кабинета (cabinet_user_id). Лид (has_lead) выставляется сервером при срабатывании regex на контакты."""
+    """Все диалоги тенанта. По умолчанию архивные не показываются. Просмотренность — по текущему пользователю кабинета. Лид (has_lead) выставляется сервером при срабатывании regex на контакты."""
     count_q = select(func.count()).select_from(Dialog).where(Dialog.tenant_id == tenant_id)
     q = select(Dialog).where(Dialog.tenant_id == tenant_id)
+    if not include_archived:
+        count_q = count_q.where(Dialog.archived == False)  # noqa: E712
+        q = q.where(Dialog.archived == False)  # noqa: E712
     if date_from is not None:
         dt_from = datetime.combine(date_from, datetime.min.time())
         count_q = count_q.where(Dialog.updated_at >= dt_from)
@@ -175,6 +179,34 @@ async def list_tenant_dialogs(
             "viewed_at": viewed_map.get(d.id),
         })
     return total, items
+
+
+async def get_dialog_by_id(db: AsyncSession, tenant_id: UUID, dialog_id: UUID):
+    """Получить диалог по id в рамках тенанта."""
+    result = await db.execute(
+        select(Dialog).where(Dialog.id == dialog_id, Dialog.tenant_id == tenant_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def archive_dialog(db: AsyncSession, tenant_id: UUID, dialog_id: UUID) -> bool:
+    """Перевести диалог в архив. Возвращает True если диалог найден и обновлён."""
+    dialog = await get_dialog_by_id(db, tenant_id, dialog_id)
+    if not dialog:
+        return False
+    dialog.archived = True
+    await db.flush()
+    return True
+
+
+async def delete_dialog(db: AsyncSession, tenant_id: UUID, dialog_id: UUID) -> bool:
+    """Удалить диалог и все связанные сообщения/просмотры/лиды. Возвращает True если диалог найден и удалён."""
+    dialog = await get_dialog_by_id(db, tenant_id, dialog_id)
+    if not dialog:
+        return False
+    await db.delete(dialog)
+    await db.flush()
+    return True
 
 
 async def mark_dialog_viewed(

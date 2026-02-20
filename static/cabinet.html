@@ -149,6 +149,9 @@
     .dialog-card .dialog-meta .msg-count { color: var(--accent); }
     .dialog-card .dialog-meta .lead-badge { color: var(--success); font-weight: 600; }
     .dialog-card .dialog-meta .viewed-badge { color: var(--text-muted); font-style: italic; }
+    .dialog-detail-actions .dialog-action-btn { margin-right: 0.5rem; }
+    .dialog-detail-actions .dialog-action-btn.delete { border-color: rgba(248,81,73,0.6); color: var(--danger); }
+    .dialog-detail-actions .dialog-action-btn.delete:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
     .dialog-card .dialog-meta .user-id { font-weight: normal; color: var(--text-muted); font-size: 0.8rem; }
     .leads-list .lead-item { border-radius: 6px; }
     .leads-list .lead-item .contact { font-weight: 600; font-size: 1rem; color: var(--text); }
@@ -441,7 +444,7 @@
         } catch (_) { return isoStr; }
       }
 
-      async function loadDialogs(dateFromVal, dateToVal, page, onlyNew, onlyLeads) {
+      async function loadDialogs(dateFromVal, dateToVal, page, onlyNew, onlyLeads, showArchived) {
         page = page || 1;
         dialogsPage = page;
         if (!requireAuth()) return;
@@ -452,6 +455,7 @@
         if (dateToVal) url += '&date_to=' + encodeURIComponent(dateToVal);
         if (onlyNew) url += '&only_new=true';
         if (onlyLeads) url += '&only_leads=true';
+        if (showArchived) url += '&include_archived=true';
         const r = await fetch(url, { headers: headers() });
         if (!r.ok) {
           document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки диалогов. Войдите в кабинет.</p>';
@@ -467,6 +471,7 @@
         html += '<label>По: <input type="date" id="dialogsDateTo" value="' + escapeHtml(dateToVal || '') + '"></label>';
         html += '<label class="checkbox-label"><input type="checkbox" id="dialogsOnlyNew" ' + (onlyNew ? 'checked' : '') + '> Только новые</label>';
         html += '<label class="checkbox-label"><input type="checkbox" id="dialogsOnlyLeads" ' + (onlyLeads ? 'checked' : '') + '> Только с лидами</label>';
+        html += '<label class="checkbox-label"><input type="checkbox" id="dialogsShowArchived" ' + (showArchived ? 'checked' : '') + '> Показать архив</label>';
         html += '<button type="button" id="dialogsFilterBtn">Применить</button>';
         html += '<button type="button" class="reset-btn" id="dialogsFilterReset">Сбросить</button>';
         html += '<span class="hint" style="margin-left:0.5rem;">Всего: ' + total + '</span>';
@@ -488,6 +493,7 @@
             html += '<span class="msg-count">' + (d.message_count || 0) + ' сообщ.</span>';
             if (d.has_lead) html += '<span class="lead-badge">✓ Лид</span>';
             if (d.viewed_at) html += '<span class="viewed-badge">Просмотрено ' + formatDate(d.viewed_at) + '</span>';
+            if (d.archived) html += '<span class="viewed-badge">В архиве</span>';
             var uid = (d.user_id || '').toString();
             var uidShort = uid.length > 20 ? uid.slice(0, 18) + '…' : uid;
             html += '<span class="user-id" title="' + escapeHtml(uid) + '">Посетитель: ' + escapeHtml(uidShort || '—') + '</span>';
@@ -510,7 +516,8 @@
           var to = document.getElementById('dialogsDateTo').value;
           var onlyNew = document.getElementById('dialogsOnlyNew') && document.getElementById('dialogsOnlyNew').checked;
           var onlyLeads = document.getElementById('dialogsOnlyLeads') && document.getElementById('dialogsOnlyLeads').checked;
-          loadDialogs(from || undefined, to || undefined, 1, onlyNew, onlyLeads);
+          var showArchived = document.getElementById('dialogsShowArchived') && document.getElementById('dialogsShowArchived').checked;
+          loadDialogs(from || undefined, to || undefined, 1, onlyNew, onlyLeads, showArchived);
         });
         var resetBtn = document.getElementById('dialogsFilterReset');
         if (resetBtn) resetBtn.addEventListener('click', function() {
@@ -520,7 +527,9 @@
           if (onlyNewEl) onlyNewEl.checked = false;
           var onlyLeadsEl = document.getElementById('dialogsOnlyLeads');
           if (onlyLeadsEl) onlyLeadsEl.checked = false;
-          loadDialogs(undefined, undefined, 1, false, false);
+          var showArchivedEl = document.getElementById('dialogsShowArchived');
+          if (showArchivedEl) showArchivedEl.checked = false;
+          loadDialogs(undefined, undefined, 1, false, false, false);
         });
         var prevBtn = document.getElementById('dialogsPrev');
         var nextBtn = document.getElementById('dialogsNext');
@@ -532,7 +541,8 @@
               var to = document.getElementById('dialogsDateTo').value;
               var onlyNew = document.getElementById('dialogsOnlyNew') && document.getElementById('dialogsOnlyNew').checked;
               var onlyLeads = document.getElementById('dialogsOnlyLeads') && document.getElementById('dialogsOnlyLeads').checked;
-              loadDialogs(from || undefined, to || undefined, dialogsPage - 1, onlyNew, onlyLeads);
+              var showArchived = document.getElementById('dialogsShowArchived') && document.getElementById('dialogsShowArchived').checked;
+              loadDialogs(from || undefined, to || undefined, dialogsPage - 1, onlyNew, onlyLeads, showArchived);
             }
           });
         }
@@ -544,7 +554,8 @@
               var to = document.getElementById('dialogsDateTo').value;
               var onlyNew = document.getElementById('dialogsOnlyNew') && document.getElementById('dialogsOnlyNew').checked;
               var onlyLeads = document.getElementById('dialogsOnlyLeads') && document.getElementById('dialogsOnlyLeads').checked;
-              loadDialogs(from || undefined, to || undefined, dialogsPage + 1, onlyNew, onlyLeads);
+              var showArchived = document.getElementById('dialogsShowArchived') && document.getElementById('dialogsShowArchived').checked;
+              loadDialogs(from || undefined, to || undefined, dialogsPage + 1, onlyNew, onlyLeads, showArchived);
             }
           });
         }
@@ -559,7 +570,12 @@
           return;
         }
         const d = await r.json();
-        let html = '<h2>Диалог</h2><p><a href="#" data-goto="dialogs">← Мои диалоги</a></p><ul class="list">';
+        let html = '<h2>Диалог</h2><p><a href="#" data-goto="dialogs">← К списку диалогов</a></p>';
+        if (d.archived) html += '<p class="hint">В архиве</p>';
+        html += '<div class="dialog-detail-actions" style="margin-bottom:1rem;">';
+        if (!d.archived) html += '<button type="button" id="dialogArchiveBtn" class="dialog-action-btn">В архив</button>';
+        html += ' <button type="button" id="dialogDeleteBtn" class="dialog-action-btn delete">Удалить диалог</button>';
+        html += '</div><ul class="list">';
         for (const m of (d.messages || [])) {
           var content = m.content || '';
           var displayContent = (m.role === 'assistant') ? content : (content.length > 500 ? content.slice(0, 500) + '…' : content);
@@ -568,6 +584,21 @@
         }
         html += '</ul>';
         document.getElementById('content').innerHTML = html;
+        var archiveBtn = document.getElementById('dialogArchiveBtn');
+        var deleteBtn = document.getElementById('dialogDeleteBtn');
+        if (archiveBtn) archiveBtn.addEventListener('click', async function() {
+          var res = await fetch(base + '/' + tenantId + '/me/tenant/dialogs/' + dialogId + '/archive', { method: 'PATCH', headers: headers(true) });
+          var j = await res.json().catch(function() { return {}; });
+          if (!res.ok) { alert(j.detail || 'Ошибка'); return; }
+          window.history.pushState({}, '', '/' + tenantSlug + '/my/dialogs'); route();
+        });
+        if (deleteBtn) deleteBtn.addEventListener('click', async function() {
+          if (!confirm('Удалить диалог безвозвратно? Все сообщения будут удалены.')) return;
+          var res = await fetch(base + '/' + tenantId + '/me/tenant/dialogs/' + dialogId, { method: 'DELETE', headers: headers() });
+          var j = await res.json().catch(function() { return {}; });
+          if (!res.ok) { alert(j.detail || 'Ошибка удаления'); return; }
+          window.history.pushState({}, '', '/' + tenantSlug + '/my/dialogs'); route();
+        });
       }
 
       async function loadUserPrompt() {

@@ -67,6 +67,7 @@ class DialogListItem(BaseModel):
     user_id: str | None = None
     message_count: int = 0
     has_lead: bool = False
+    archived: bool = False
 
     class Config:
         from_attributes = True
@@ -90,6 +91,7 @@ class DialogDetailResponse(BaseModel):
     id: UUID
     messages: list[MessageInDialog]
     viewed_at: datetime | None = None
+    archived: bool = False
 
 
 # Cabinet: saved
