@@ -1,5 +1,6 @@
 """Регистрация с подтверждением по email, логин, JWT."""
 import hmac
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -152,12 +153,20 @@ async def forgot_password(
     db: AsyncSession = Depends(get_db),
 ):
     """Запрос восстановления пароля: отправка письма со ссылкой на сброс (если пользователь с таким email есть и подтверждён)."""
+    logger = logging.getLogger(__name__)
     tenant = await get_tenant_by_slug(db, slug)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     user = await request_password_reset(db, tenant.id, body.email)
     if user:
+        logger.info("Сброс пароля: отправляем письмо на %s, тенант %s", user.email, slug)
         await send_password_reset_email(user.email, tenant.slug, user.reset_password_token)
+    else:
+        logger.info(
+            "Сброс пароля: письмо не отправлено — пользователь с email %s не найден в тенанте %s или email не подтверждён (нужно перейти по ссылке из письма регистрации).",
+            body.email,
+            slug,
+        )
     return {"message": "Если аккаунт с таким email зарегистрирован и подтверждён, на почту отправлена ссылка для сброса пароля."}
 
 

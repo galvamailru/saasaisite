@@ -6,7 +6,7 @@ from uuid import UUID
 
 import bcrypt
 import jwt
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -228,10 +228,11 @@ RESET_PASSWORD_EXPIRE_HOURS = 2
 async def request_password_reset(db: AsyncSession, tenant_id: UUID, email: str) -> TenantUser | None:
     """Генерирует токен сброса пароля и сохраняет в пользователе. Возвращает пользователя или None."""
     email_norm = email.lower().strip()
+    # Поиск без учёта регистра email (на случай старых записей или разных клиентов)
     result = await db.execute(
         select(TenantUser).where(
             TenantUser.tenant_id == tenant_id,
-            TenantUser.email == email_norm,
+            func.lower(TenantUser.email) == email_norm,
             TenantUser.email_confirmed_at.isnot(None),
         )
     )
