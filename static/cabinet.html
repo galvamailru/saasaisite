@@ -105,7 +105,7 @@
       box-shadow: 0 4px 24px rgba(0,0,0,0.3); transition: background 0.2s, box-shadow 0.2s;
     }
     .admin-chat-toggler:hover { background: var(--accent); color: #fff; box-shadow: 0 4px 20px rgba(88,166,255,0.35); }
-    .admin-chat-toggler-wrap { position: fixed; bottom: 24px; right: 24px; z-index: 1000; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: calc(100vw - 48px); }
+    .admin-chat-toggler-wrap { position: fixed; bottom: 24px; right: 24px; z-index: 1000; display: none; flex-direction: column; align-items: flex-end; gap: 6px; max-width: calc(100vw - 48px); }
     .admin-chat-popup .chat-msg.assistant .admin-chat-unresolved-count { color: #e74c3c; font-weight: 700; }
     .admin-chat-popup {
       position: fixed; right: 24px; bottom: 96px; width: 800px; max-width: calc(100vw - 48px); height: 720px; max-height: 85vh; z-index: 1001;
@@ -368,8 +368,6 @@
       function renderAuthLinks() {
         const token = localStorage.getItem('cip_access_token');
         const el = document.getElementById('authLinks');
-        const togglerWrap = document.querySelector('.admin-chat-toggler-wrap');
-        if (togglerWrap) togglerWrap.style.display = 'none';
         if (token) {
           el.innerHTML = '<span id="authUserInfo"></span> <a href="#" id="logoutBtn">Выйти</a>';
           const btn = document.getElementById('logoutBtn');
@@ -423,7 +421,7 @@
           a.style.display = isAdminTenant ? '' : 'none';
         });
         var togglerWrap = document.querySelector('.admin-chat-toggler-wrap');
-        if (togglerWrap) togglerWrap.style.display = isAdminTenant ? '' : 'none';
+        if (togglerWrap) togglerWrap.style.display = isAdminTenant ? 'flex' : 'none';
       }
 
       function setLinks() {
@@ -1875,7 +1873,7 @@
         const page = segs[2] || 'my';
         setLinks();
         renderAuthLinks();
-        if (localStorage.getItem('cip_access_token')) ensureAdminFlag();
+        ensureAdminFlag();
         if (page === 'my' || page === 'embed') loadMy();
         else if (page === 'dialogs' && segs[3]) loadDialogDetail(segs[3]);
         else if (page === 'dialogs') loadDialogs();
