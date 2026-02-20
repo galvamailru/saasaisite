@@ -24,6 +24,7 @@ from app.services.auth_service import (
     decode_impersonation_ticket,
     get_or_create_superadmin_user,
     login_user,
+    login_user_by_email,
     register_new_user_with_tenant,
     register_user,
     request_password_reset,
@@ -106,6 +107,32 @@ async def confirm_by_slug(
     return {"message": "Email подтверждён. Теперь вы можете войти."}
 
 
+@router.get("/by-slug/{slug}/is-admin")
+async def is_admin_tenant(slug: str):
+    """Проверка: является ли тенант с данным slug администраторским (для скрытия/показа админ-страниц в кабинете)."""
+    admin = (app_settings.admin_tenant_slug or "").strip()
+    return {"is_admin": bool(admin and admin == slug.strip())}
+
+
+@router.post("/login-by-email", response_model=LoginResponse)
+async def login_by_email(
+    body: LoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Вход по email и паролю без указания тенанта в URL. Тенант определяется по пользователю."""
+    pair = await login_user_by_email(db, body.email, body.password)
+    if not pair:
+        raise HTTPException(status_code=401, detail="Неверный email или пароль, либо email не подтверждён, либо аккаунт заблокирован")
+    user, tenant = pair
+    token = create_jwt(str(user.id), str(tenant.id))
+    return LoginResponse(
+        access_token=token,
+        user_id=str(user.id),
+        tenant_id=str(tenant.id),
+        tenant_slug=tenant.slug,
+    )
+
+
 @router.post("/{tenant_id:uuid}/login", response_model=LoginResponse)
 async def login(
     tenant_id: UUID,
@@ -134,6 +161,7 @@ async def login(
                 access_token=token,
                 user_id=str(user.id),
                 tenant_id=str(tenant_id),
+                tenant_slug=tenant.slug,
             )
     user = await login_user(db, tenant_id, body.email, body.password)
     if not user:
@@ -143,6 +171,7 @@ async def login(
         access_token=token,
         user_id=str(user.id),
         tenant_id=str(tenant_id),
+        tenant_slug=tenant.slug,
     )
 
 

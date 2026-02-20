@@ -369,10 +369,10 @@
             localStorage.removeItem('cip_access_token');
             localStorage.removeItem('cip_user_id');
             localStorage.removeItem('cip_tenant_id');
-            window.location.href = '/' + tenantSlug + '/login';
+            window.location.href = '/login';
           });
         } else {
-          el.innerHTML = '<a href="/' + tenantSlug + '/login">Войти</a> <a href="/' + tenantSlug + '/register">Регистрация</a>';
+          el.innerHTML = '<a href="/login">Войти</a> <a href="/register">Создать аккаунт</a>';
         }
       }
 
@@ -382,6 +382,18 @@
         if (!r.ok) throw new Error('Тенант не найден');
         const t = await r.json();
         tenantId = t.id;
+      }
+
+      let isAdminTenant = false;
+      async function ensureAdminFlag() {
+        try {
+          const r = await fetch(base + '/by-slug/' + encodeURIComponent(tenantSlug) + '/is-admin');
+          const d = await r.json().catch(function() { return {}; });
+          isAdminTenant = !!d.is_admin;
+        } catch (_) { isAdminTenant = false; }
+        document.querySelectorAll('nav a[data-page="admin-prompt"], nav a[data-page="mcp-servers"], nav a[data-page="users"]').forEach(function(a) {
+          a.style.display = isAdminTenant ? '' : 'none';
+        });
       }
 
       function setLinks() {
@@ -679,10 +691,21 @@
         });
       }
 
+      function renderAdminOnlyError(title) {
+        return '<h2>' + escapeHtml(title) + '</h2><div class="panel">' +
+          '<p class="error">Доступ только для администратора.</p>' +
+          '<p class="hint">Чтобы видеть эту страницу, задайте в .env переменную <code>ADMIN_TENANT_SLUG</code> — slug тенанта, от имени которого вы входите.</p></div>';
+      }
+
       async function loadAdminPrompt() {
         if (!requireAuth()) return;
         await ensureTenant();
         const rPrompt = await fetch(base + '/' + tenantId + '/me/admin-prompt', { headers: headers() });
+        if (rPrompt.status === 403) {
+          const data = await rPrompt.json().catch(function() { return {}; });
+          document.getElementById('content').innerHTML = renderAdminOnlyError('Промпт админ-бота');
+          return;
+        }
         if (!rPrompt.ok) {
           document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки. Войдите в кабинет.</p>';
           return;
@@ -1329,6 +1352,10 @@
         await ensureTenant();
         document.getElementById('content').innerHTML = '<div class="page-mcp"><h2>MCP серверы</h2><p class="content-loading">Загрузка…</p></div>';
         const r = await fetch(base + '/' + tenantId + '/me/mcp-servers?with_tools=true', { headers: headers() });
+        if (r.status === 403) {
+          document.getElementById('content').innerHTML = renderAdminOnlyError('MCP серверы');
+          return;
+        }
         let html = '<div class="page-mcp"><h2>MCP серверы</h2><p class="hint">Подключайте MCP-серверы по URL. Их инструменты (tools) будут доступны чат-боту для клиентов.</p>';
         if (!r.ok) {
           document.getElementById('content').innerHTML = html + '<p class="error">Ошибка загрузки списка.</p></div>';
@@ -1608,11 +1635,7 @@
         if (usersSearch) url += '&search=' + encodeURIComponent(usersSearch);
         const rAdmin = await fetch(url, { headers: headers() });
         if (rAdmin.status === 403) {
-          const data = await rAdmin.json().catch(() => ({}));
-          document.getElementById('content').innerHTML =
-            '<h2>Пользователи</h2><div class="panel">' +
-            '<p class="error">' + escapeHtml(data.detail || 'Доступ только для администратора.') + '</p>' +
-            '<p class="hint">Чтобы видеть таблицу тенантов и редактировать их ограничения, задайте в .env переменную <code>ADMIN_TENANT_SLUG</code> — slug тенанта, от имени которого вы входите.</p></div>';
+          document.getElementById('content').innerHTML = renderAdminOnlyError('Пользователи');
           return;
         }
         if (!rAdmin.ok) {
@@ -1798,6 +1821,7 @@
       });
       window.onpopstate = route;
       route();
+      ensureAdminFlag();
     })();
   </script>
 </body>

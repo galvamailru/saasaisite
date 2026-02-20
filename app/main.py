@@ -109,6 +109,15 @@ async def serve_register(slug: str, db: AsyncSession = Depends(get_db)) -> FileR
     return FileResponse(path)
 
 
+@app.get("/login")
+async def serve_login_standalone() -> FileResponse:
+    """Вход без указания тенанта в URL: обезличенная форма, тенант определяется по email."""
+    path = STATIC_DIR / "login.html"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="login page not found")
+    return FileResponse(path)
+
+
 @app.get("/{slug}/login")
 async def serve_login(slug: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
     tenant = await get_tenant_by_slug(db, slug)
@@ -155,5 +164,5 @@ async def serve_reset_password(slug: str, db: AsyncSession = Depends(get_db)) ->
 
 @app.get("/")
 async def root():
-    """Отдельной главной страницы нет. Редирект на вход демо-тенанта."""
-    return RedirectResponse(url="/demo/login", status_code=302)
+    """Отдельной главной страницы нет. Редирект на обезличенную страницу входа."""
+    return RedirectResponse(url="/login", status_code=302)

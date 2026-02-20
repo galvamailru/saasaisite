@@ -28,6 +28,7 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     user_id: str
     tenant_id: str
+    tenant_slug: str | None = None  # для редиректа после входа без slug (/login)
 
 
 class ForgotPasswordRequest(BaseModel):

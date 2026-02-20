@@ -555,7 +555,7 @@ async def rollback_prod_prompt(
     return _build_user_prompt_response(tenant)
 
 
-# Admin bot prompt (единый системный промпт)
+# Admin bot prompt (единый системный промпт) — только для тенанта-администратора
 @router.get("/{tenant_id:uuid}/me/admin-prompt", response_model=AdminPromptResponse)
 async def get_admin_prompt(
     tenant_id: UUID,
@@ -565,6 +565,7 @@ async def get_admin_prompt(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
     system_prompt = await get_admin_system_prompt(db, tenant_id)
     return AdminPromptResponse(system_prompt=system_prompt)
 
@@ -579,6 +580,7 @@ async def patch_admin_prompt(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
     await set_admin_system_prompt(db, tenant_id, body.system_prompt)
     system_prompt = await get_admin_system_prompt(db, tenant_id)
     return AdminPromptResponse(system_prompt=system_prompt)
@@ -594,6 +596,7 @@ async def get_admin_prompt_default(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
     try:
         system_prompt = load_admin_prompt()
     except FileNotFoundError:
@@ -961,7 +964,7 @@ async def rag_delete_document(
     return Response(status_code=204)
 
 
-# MCP servers (dynamic connections)
+# MCP servers (dynamic connections) — только для тенанта-администратора
 @router.get("/{tenant_id:uuid}/me/mcp-servers", response_model=list[McpServerResponse])
 async def mcp_servers_list(
     tenant_id: UUID,
@@ -972,6 +975,7 @@ async def mcp_servers_list(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
     servers = await list_mcp_servers(db, tenant_id)
     out = []
     for s in servers:
@@ -1009,6 +1013,7 @@ async def mcp_server_create(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
     s = await create_mcp_server(
         db, tenant_id, name=body.name, base_url=body.base_url, enabled=body.enabled
     )
@@ -1031,6 +1036,10 @@ async def mcp_server_update(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_cabinet_user),
 ):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
     server = await get_mcp_server(db, tenant_id, server_id)
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found")
@@ -1058,6 +1067,10 @@ async def mcp_server_delete(
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_cabinet_user),
 ):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
     server = await get_mcp_server(db, tenant_id, server_id)
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found")

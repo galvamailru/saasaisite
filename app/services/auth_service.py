@@ -191,6 +191,34 @@ async def login_user(
     return user
 
 
+async def login_user_by_email(
+    db: AsyncSession,
+    email: str,
+    password: str,
+) -> tuple[TenantUser, Tenant] | None:
+    """Вход по email и паролю без указания тенанта. Возвращает (user, tenant) или None.
+    Если пользователь с таким email есть в нескольких тенантах — берётся первый по дате создания."""
+    email_norm = email.lower().strip()
+    result = await db.execute(
+        select(TenantUser, Tenant)
+        .join(Tenant, TenantUser.tenant_id == Tenant.id)
+        .where(func.lower(TenantUser.email) == email_norm)
+        .order_by(TenantUser.created_at)
+        .limit(1)
+    )
+    row = result.one_or_none()
+    if not row:
+        return None
+    user, tenant = row
+    if not user.email_confirmed_at:
+        return None
+    if not verify_password(password, user.password_hash):
+        return None
+    if (tenant.settings or {}).get("blocked"):
+        return None
+    return (user, tenant)
+
+
 async def get_or_create_superadmin_user(
     db: AsyncSession,
     tenant_id: UUID,
