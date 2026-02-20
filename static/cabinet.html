@@ -233,17 +233,20 @@
     .pagination { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
     .pagination button { padding: 0.25rem 0.6rem; font-size: 0.8rem; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
     .pagination button[disabled] { opacity: 0.5; cursor: default; }
-    .limits-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; font-size: 0.9rem; }
+    .limits-table-wrap { width: 100%; overflow-x: auto; margin-top: 0.75rem; }
+    .limits-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 0.9rem; }
     .limits-table th, .limits-table td { padding: 0.5rem 0.75rem; text-align: left; border: 1px solid var(--border); }
     .limits-table th { background: var(--surface); font-weight: 600; }
-    .limits-table tr:hover { background: rgba(88,166,255,0.04); }
+    .limits-table tbody tr:hover { background: rgba(88,166,255,0.04); }
+    .limits-table tbody tr.row-blocked { background: rgba(200, 60, 60, 0.12); }
+    .limits-table tbody tr.row-blocked:hover { background: rgba(200, 60, 60, 0.18); }
     .limits-table td.actions-cell { white-space: nowrap; padding: 0.35rem 0.5rem; vertical-align: middle; }
     .limits-table .actions-btns { display: inline-flex; flex-wrap: nowrap; gap: 0.25rem; align-items: center; }
     .limits-table .btn-edit-limits, .limits-table .btn-block, .limits-table .btn-open-tenant { padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; }
     .limits-table .btn-edit-limits:hover, .limits-table .btn-open-tenant:hover { background: rgba(88,166,255,0.1); }
     .limits-table .btn-block:hover { background: rgba(88,166,255,0.1); }
-    .limits-table .btn-block.blocked { background: #c00; color: #fff; border-color: #a00; }
-    .limits-table .btn-block.blocked:hover { background: #e00; color: #fff; }
+    .limits-table .btn-block.btn-blocked { background: #c00; color: #fff; border-color: #a00; }
+    .limits-table .btn-block.btn-blocked:hover { background: #e00; color: #fff; }
     .users-search-row { margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     .users-search-row label { margin: 0; }
     .users-search-row #usersSearchBtn { padding: 0.35rem 0.6rem; font-size: 0.85rem; }
@@ -1502,14 +1505,14 @@
         html += '<div class="panel"><div class="users-search-row"><label for="usersSearchInput">Поиск по тенанту:</label> ';
         html += '<input type="text" id="usersSearchInput" placeholder="slug или название..." value="' + escapeHtml(usersSearch) + '" style="max-width:220px; padding:0.35rem 0.5rem;"> ';
         html += '<button type="button" id="usersSearchBtn">Найти</button></div>';
-        html += '<table class="limits-table"><thead><tr>';
+        html += '<div class="limits-table-wrap"><table class="limits-table"><thead><tr>';
         html += '<th>Тенант (slug)</th><th>Название</th><th>Блок</th>';
         html += '<th>Симв. чата</th><th>Промпт</th><th>RAG док.</th><th>Галерей</th><th>Фото в галерее</th>';
         html += '<th>Действие</th></tr></thead><tbody>';
         for (var i = 0; i < tenants.length; i++) {
           var t = tenants[i];
-          var blocked = t.blocked === true;
-          html += '<tr data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '" data-blocked="' + (blocked ? '1' : '0') + '">';
+          var blocked = !!(t.blocked === true || t.blocked === 'true');
+          html += '<tr class="' + (blocked ? 'row-blocked ' : '') + '" data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '" data-blocked="' + (blocked ? '1' : '0') + '">';
           html += '<td>' + escapeHtml(t.slug || '') + '</td><td>' + escapeHtml(t.name || '') + '</td>';
           html += '<td>' + (blocked ? 'Да' : 'Нет') + '</td>';
           html += '<td>' + escapeHtml(String(t.chat_max_user_message_chars ?? 500)) + '</td>';
@@ -1519,10 +1522,10 @@
           html += '<td>' + escapeHtml(String(t.gallery_max_images_per_group ?? 3)) + '</td>';
           html += '<td class="actions-cell"><div class="actions-btns">';
           html += '<button type="button" class="btn-open-tenant" data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '">Перейти</button>';
-          html += '<button type="button" class="btn-block' + (blocked ? ' blocked' : '') + '" data-blocked="' + (blocked ? '1' : '0') + '">' + (blocked ? 'Разблокировать' : 'Заблокировать') + '</button>';
+          html += '<button type="button" class="btn-block' + (blocked ? ' btn-blocked' : '') + '" data-blocked="' + (blocked ? '1' : '0') + '">' + (blocked ? 'Разблокировать' : 'Заблокировать') + '</button>';
           html += '<button type="button" class="btn-edit-limits">Изменить</button></div></td></tr>';
         }
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
         var from = offset + 1;
         var to = Math.min(offset + tenants.length, usersTotal);
         html += '<div class="pagination">';
