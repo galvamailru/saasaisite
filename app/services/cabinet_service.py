@@ -106,8 +106,9 @@ async def list_tenant_dialogs(
     date_from: date | None = None,
     date_to: date | None = None,
     only_new: bool = False,
+    only_leads: bool = False,
 ) -> tuple[int, list]:
-    """Все диалоги тенанта. date_from/date_to — фильтр по updated_at (включительно). only_new — только непросмотренные (viewed_at IS NULL)."""
+    """Все диалоги тенанта. date_from/date_to — фильтр по updated_at. only_new — только непросмотренные. only_leads — только диалоги с лидом."""
     count_q = select(func.count()).select_from(Dialog).where(Dialog.tenant_id == tenant_id)
     q = select(Dialog).where(Dialog.tenant_id == tenant_id)
     if date_from is not None:
@@ -121,6 +122,10 @@ async def list_tenant_dialogs(
     if only_new:
         count_q = count_q.where(Dialog.viewed_at.is_(None))
         q = q.where(Dialog.viewed_at.is_(None))
+    if only_leads:
+        lead_exists = exists().where(Lead.dialog_id == Dialog.id, Lead.tenant_id == tenant_id)
+        count_q = count_q.where(lead_exists)
+        q = q.where(lead_exists)
     total = (await db.execute(count_q)).scalar() or 0
     q = q.order_by(Dialog.updated_at.desc()).limit(limit).offset(offset)
     result = await db.execute(q)
@@ -151,7 +156,7 @@ async def mark_dialog_viewed(
     tenant_id: UUID,
     dialog_id: UUID,
 ) -> Dialog | None:
-    """Пометить диалог как просмотренный (админ открыл в кабинете). Возвращает диалог или None."""
+    """Пометить диалог как просмотренный: админ хотя бы раз открыл этот диалог в кабинете. Работает для любого диалога."""
     result = await db.execute(
         select(Dialog).where(
             Dialog.id == dialog_id,
@@ -161,6 +166,7 @@ async def mark_dialog_viewed(
     dialog = result.scalar_one_or_none()
     if dialog:
         dialog.viewed_at = datetime.now(timezone.utc)
+        await db.flush()
     return dialog
 
 

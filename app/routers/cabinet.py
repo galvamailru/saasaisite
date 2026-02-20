@@ -161,6 +161,7 @@ async def list_tenant_dialogs_endpoint(
     date_from: str | None = Query(None, description="YYYY-MM-DD"),
     date_to: str | None = Query(None, description="YYYY-MM-DD"),
     only_new: bool = Query(False, description="Только непросмотренные диалоги"),
+    only_leads: bool = Query(False, description="Только диалоги с лидом"),
 ):
     from datetime import datetime as dt
     tenant = await get_tenant_by_id(db, tenant_id)
@@ -169,7 +170,7 @@ async def list_tenant_dialogs_endpoint(
     d_from = dt.strptime(date_from, "%Y-%m-%d").date() if date_from else None
     d_to = dt.strptime(date_to, "%Y-%m-%d").date() if date_to else None
     total, items = await list_tenant_dialogs(
-        db, tenant_id, limit=limit, offset=offset, date_from=d_from, date_to=d_to, only_new=only_new
+        db, tenant_id, limit=limit, offset=offset, date_from=d_from, date_to=d_to, only_new=only_new, only_leads=only_leads
     )
     return DialogListResponse(
         total=total,

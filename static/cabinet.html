@@ -398,7 +398,7 @@
         } catch (_) { return isoStr; }
       }
 
-      async function loadDialogs(dateFromVal, dateToVal, page, onlyNew) {
+      async function loadDialogs(dateFromVal, dateToVal, page, onlyNew, onlyLeads) {
         page = page || 1;
         dialogsPage = page;
         if (!requireAuth()) return;
@@ -408,6 +408,7 @@
         if (dateFromVal) url += '&date_from=' + encodeURIComponent(dateFromVal);
         if (dateToVal) url += '&date_to=' + encodeURIComponent(dateToVal);
         if (onlyNew) url += '&only_new=true';
+        if (onlyLeads) url += '&only_leads=true';
         const r = await fetch(url, { headers: headers() });
         if (!r.ok) {
           document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки диалогов. Войдите в кабинет.</p>';
@@ -422,6 +423,7 @@
         html += '<label>С: <input type="date" id="dialogsDateFrom" value="' + escapeHtml(dateFromVal || '') + '"></label>';
         html += '<label>По: <input type="date" id="dialogsDateTo" value="' + escapeHtml(dateToVal || '') + '"></label>';
         html += '<label class="checkbox-label"><input type="checkbox" id="dialogsOnlyNew" ' + (onlyNew ? 'checked' : '') + '> Только новые</label>';
+        html += '<label class="checkbox-label"><input type="checkbox" id="dialogsOnlyLeads" ' + (onlyLeads ? 'checked' : '') + '> Только с лидами</label>';
         html += '<button type="button" id="dialogsFilterBtn">Применить</button>';
         html += '<button type="button" class="reset-btn" id="dialogsFilterReset">Сбросить</button>';
         html += '<span class="hint" style="margin-left:0.5rem;">Всего: ' + total + '</span>';
@@ -463,7 +465,8 @@
           var from = document.getElementById('dialogsDateFrom').value;
           var to = document.getElementById('dialogsDateTo').value;
           var onlyNew = document.getElementById('dialogsOnlyNew') && document.getElementById('dialogsOnlyNew').checked;
-          loadDialogs(from || undefined, to || undefined, 1, onlyNew);
+          var onlyLeads = document.getElementById('dialogsOnlyLeads') && document.getElementById('dialogsOnlyLeads').checked;
+          loadDialogs(from || undefined, to || undefined, 1, onlyNew, onlyLeads);
         });
         var resetBtn = document.getElementById('dialogsFilterReset');
         if (resetBtn) resetBtn.addEventListener('click', function() {
@@ -471,7 +474,9 @@
           document.getElementById('dialogsDateTo').value = '';
           var onlyNewEl = document.getElementById('dialogsOnlyNew');
           if (onlyNewEl) onlyNewEl.checked = false;
-          loadDialogs(undefined, undefined, 1, false);
+          var onlyLeadsEl = document.getElementById('dialogsOnlyLeads');
+          if (onlyLeadsEl) onlyLeadsEl.checked = false;
+          loadDialogs(undefined, undefined, 1, false, false);
         });
         var prevBtn = document.getElementById('dialogsPrev');
         var nextBtn = document.getElementById('dialogsNext');
@@ -482,7 +487,8 @@
               var from = document.getElementById('dialogsDateFrom').value;
               var to = document.getElementById('dialogsDateTo').value;
               var onlyNew = document.getElementById('dialogsOnlyNew') && document.getElementById('dialogsOnlyNew').checked;
-              loadDialogs(from || undefined, to || undefined, dialogsPage - 1, onlyNew);
+              var onlyLeads = document.getElementById('dialogsOnlyLeads') && document.getElementById('dialogsOnlyLeads').checked;
+              loadDialogs(from || undefined, to || undefined, dialogsPage - 1, onlyNew, onlyLeads);
             }
           });
         }
@@ -493,7 +499,8 @@
               var from = document.getElementById('dialogsDateFrom').value;
               var to = document.getElementById('dialogsDateTo').value;
               var onlyNew = document.getElementById('dialogsOnlyNew') && document.getElementById('dialogsOnlyNew').checked;
-              loadDialogs(from || undefined, to || undefined, dialogsPage + 1, onlyNew);
+              var onlyLeads = document.getElementById('dialogsOnlyLeads') && document.getElementById('dialogsOnlyLeads').checked;
+              loadDialogs(from || undefined, to || undefined, dialogsPage + 1, onlyNew, onlyLeads);
             }
           });
         }
