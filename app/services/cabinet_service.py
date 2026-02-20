@@ -23,6 +23,21 @@ async def get_tenant_by_id(db: AsyncSession, tenant_id: UUID):
     return result.scalar_one_or_none()
 
 
+async def get_first_confirmed_user_of_tenant(db: AsyncSession, tenant_id: UUID):
+    """Первый подтверждённый пользователь тенанта (для входа администратора в кабинет тенанта)."""
+    from app.models import TenantUser
+    result = await db.execute(
+        select(TenantUser)
+        .where(
+            TenantUser.tenant_id == tenant_id,
+            TenantUser.email_confirmed_at.isnot(None),
+        )
+        .order_by(TenantUser.created_at)
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_all_tenants(
     db: AsyncSession,
     limit: int = 50,

@@ -33,9 +33,11 @@ from app.schemas import (
     TenantWithLimitsItem,
     BlockTenantUpdate,
 )
+from app.services.auth_service import create_impersonation_ticket
 from app.services.cabinet_service import (
     get_dialog_messages,
     get_dialog_messages_for_tenant,
+    get_first_confirmed_user_of_tenant,
     get_profile,
     get_saved_by_id,
     get_tenant_by_id,
@@ -1083,6 +1085,34 @@ async def update_limits(
         gallery_max_groups=current_limits["gallery_max_groups"],
         gallery_max_images_per_group=current_limits["gallery_max_images_per_group"],
     )
+
+
+# Вход в кабинет тенанта от имени администратора (без пароля тенанта)
+@router.get("/{tenant_id:uuid}/me/admin/tenants/{target_tenant_id:uuid}/impersonate")
+async def admin_impersonate_tenant(
+    tenant_id: UUID,
+    target_tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    """Возвращает билет для открытия кабинета выбранного тенанта. Администратор откроет кабинет от имени первого пользователя тенанта (сессия 30 мин)."""
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
+    target = await get_tenant_by_id(db, target_tenant_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    if (target.settings or {}).get("blocked"):
+        raise HTTPException(status_code=403, detail="Тенант заблокирован")
+    imp_user = await get_first_confirmed_user_of_tenant(db, target_tenant_id)
+    if not imp_user:
+        raise HTTPException(
+            status_code=400,
+            detail="В этом тенанте нет подтверждённых пользователей. Вход от имени администратора невозможен.",
+        )
+    ticket = create_impersonation_ticket(target_tenant_id, str(imp_user.id))
+    return {"ticket": ticket, "tenant_slug": target.slug}
 
 
 # Блокировка/разблокировка тенанта (администратор)

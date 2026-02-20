@@ -9,6 +9,7 @@ from app.config import settings as app_settings
 from app.database import get_db
 from app.schemas import (
     ForgotPasswordRequest,
+    ImpersonateRedeemRequest,
     LoginRequest,
     LoginResponse,
     RegisterRequest,
@@ -16,8 +17,10 @@ from app.schemas import (
     ResetPasswordRequest,
 )
 from app.services.auth_service import (
+    IMPERSONATE_EXPIRE_MINUTES,
     confirm_email,
     create_jwt,
+    decode_impersonation_ticket,
     get_or_create_superadmin_user,
     login_user,
     register_new_user_with_tenant,
@@ -172,3 +175,27 @@ async def reset_password(
     if not user:
         raise HTTPException(status_code=400, detail="Неверная или просроченная ссылка сброса пароля")
     return {"message": "Пароль изменён. Войдите с новым паролем."}
+
+
+@router.post("/by-slug/{slug}/impersonate-redeem", response_model=LoginResponse)
+async def impersonate_redeem(
+    slug: str,
+    body: ImpersonateRedeemRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Обмен билета (от страницы «Пользователи») на JWT для входа в кабинет тенанта. Сессия 30 минут."""
+    tenant = await get_tenant_by_slug(db, slug)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    payload = decode_impersonation_ticket(body.ticket)
+    if not payload or str(payload.get("tenant_id")) != str(tenant.id):
+        raise HTTPException(status_code=400, detail="Неверный или просроченный билет")
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Неверный билет")
+    token = create_jwt(user_id, str(tenant.id), expire_minutes=IMPERSONATE_EXPIRE_MINUTES)
+    return LoginResponse(
+        access_token=token,
+        user_id=user_id,
+        tenant_id=str(tenant.id),
+    )

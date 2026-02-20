@@ -32,19 +32,55 @@ def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(raw, hashed.encode("ascii"))
 
 
-def create_jwt(user_id: str, tenant_id: str) -> str:
+def create_jwt(user_id: str, tenant_id: str, expire_minutes: int | None = None) -> str:
     now = datetime.now(timezone.utc)
+    minutes = expire_minutes if expire_minutes is not None else settings.jwt_expire_minutes
     payload = {
         "sub": user_id,
         "tenant_id": tenant_id,
         "iat": now,
-        "exp": now + timedelta(minutes=settings.jwt_expire_minutes),
+        "exp": now + timedelta(minutes=minutes),
     }
     return jwt.encode(
         payload,
         settings.jwt_secret,
         algorithm=settings.jwt_algorithm,
     )
+
+
+# Вход в кабинет тенанта от имени администратора: короткоживущий токен (30 мин)
+IMPERSONATE_EXPIRE_MINUTES = 30
+
+
+def create_impersonation_ticket(tenant_id: UUID, user_id: str) -> str:
+    """Билет для входа в кабинет другого тенанта (передаётся в URL, затем обменивается на JWT)."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "purpose": "impersonate",
+        "tenant_id": str(tenant_id),
+        "sub": user_id,
+        "iat": now,
+        "exp": now + timedelta(minutes=IMPERSONATE_EXPIRE_MINUTES),
+    }
+    return jwt.encode(
+        payload,
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+
+
+def decode_impersonation_ticket(ticket: str) -> dict | None:
+    try:
+        payload = jwt.decode(
+            ticket,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+        )
+        if payload.get("purpose") != "impersonate":
+            return None
+        return payload
+    except jwt.PyJWTError:
+        return None
 
 
 def decode_jwt(token: str) -> dict | None:

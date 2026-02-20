@@ -39,6 +39,10 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128)
 
 
+class ImpersonateRedeemRequest(BaseModel):
+    ticket: str = Field(..., min_length=1)
+
+
 # Chat (tenant_id from path)
 class ChatRequest(BaseModel):
     user_id: str = Field(..., min_length=1, max_length=64)

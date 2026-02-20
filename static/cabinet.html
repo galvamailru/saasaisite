@@ -237,9 +237,8 @@
     .limits-table th, .limits-table td { padding: 0.5rem 0.75rem; text-align: left; border: 1px solid var(--border); }
     .limits-table th { background: var(--surface); font-weight: 600; }
     .limits-table tr:hover { background: rgba(88,166,255,0.04); }
-    .limits-table .btn-edit-limits, .limits-table .btn-block { padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; margin-right: 0.35rem; }
-    .limits-table .btn-edit-limits:hover, .limits-table .btn-block:hover { background: rgba(88,166,255,0.1); }
-    .limits-table .btn-link { color: var(--accent); margin-right: 0.35rem; }
+    .limits-table .btn-edit-limits, .limits-table .btn-block, .limits-table .btn-open-tenant { padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; margin-right: 0.35rem; }
+    .limits-table .btn-edit-limits:hover, .limits-table .btn-block:hover, .limits-table .btn-open-tenant:hover { background: rgba(88,166,255,0.1); }
     .limits-edit-panel { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); display: none; }
     .limits-edit-panel.visible { display: block; }
   </style>
@@ -274,6 +273,37 @@
       const tenantSlug = slugMatch ? slugMatch[1] : null;
       if (!tenantSlug) {
         document.getElementById('content').innerHTML = '<p class="error">Неверный URL. Ожидается /{tenant_slug}/my...</p>';
+        return;
+      }
+
+      // Вход по билету (администратор нажал «Перейти в тенант» на странице Пользователи)
+      const params = new URLSearchParams(window.location.search);
+      const ticket = params.get('ticket');
+      if (ticket) {
+        (async function() {
+          try {
+            const r = await fetch('/api/v1/tenants/by-slug/' + encodeURIComponent(tenantSlug) + '/impersonate-redeem', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ticket: ticket })
+            });
+            const data = await r.json().catch(function() { return {}; });
+            if (!r.ok) {
+              alert(data.detail || 'Билет недействителен или истёк');
+              window.history.replaceState({}, '', '/' + tenantSlug + '/my');
+              return;
+            }
+            localStorage.setItem('cip_access_token', data.access_token);
+            localStorage.setItem('cip_user_id', data.user_id);
+            localStorage.setItem('cip_tenant_id', data.tenant_id);
+            window.history.replaceState({}, '', '/' + tenantSlug + '/my');
+            window.location.reload();
+            return;
+          } catch (e) {
+            alert('Ошибка входа: ' + (e.message || e));
+          }
+          window.history.replaceState({}, '', '/' + tenantSlug + '/my');
+        })();
         return;
       }
 
@@ -1472,7 +1502,7 @@
           html += '<td>' + escapeHtml(String(t.rag_max_documents ?? 3)) + '</td>';
           html += '<td>' + escapeHtml(String(t.gallery_max_groups ?? 3)) + '</td>';
           html += '<td>' + escapeHtml(String(t.gallery_max_images_per_group ?? 3)) + '</td>';
-          html += '<td><a href="/' + escapeHtml(t.slug || '') + '/my" target="_blank" class="btn-link">Перейти в тенант</a> ';
+          html += '<td><button type="button" class="btn-open-tenant" data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '">Перейти в тенант</button> ';
           html += '<button type="button" class="btn-block" data-blocked="' + (blocked ? '1' : '0') + '">' + (blocked ? 'Разблокировать' : 'Заблокировать') + '</button> ';
           html += '<button type="button" class="btn-edit-limits">Изменить</button></td></tr>';
         }
@@ -1503,6 +1533,23 @@
 
         document.getElementById('usersPrev') && document.getElementById('usersPrev').addEventListener('click', function() { loadUsers(usersPage - 1); });
         document.getElementById('usersNext') && document.getElementById('usersNext').addEventListener('click', function() { loadUsers(usersPage + 1); });
+
+        document.querySelectorAll('.limits-table .btn-open-tenant').forEach(function(btn) {
+          btn.addEventListener('click', async function() {
+            var targetId = btn.getAttribute('data-tenant-id');
+            var slug = btn.getAttribute('data-tenant-slug');
+            if (!slug) return;
+            try {
+              var r = await fetch(base + '/' + tenantId + '/me/admin/tenants/' + targetId + '/impersonate', { headers: headers() });
+              var data = await r.json().catch(function() { return {}; });
+              if (!r.ok) { alert(data.detail || 'Не удалось получить доступ'); return; }
+              var ticket = data.ticket;
+              if (!ticket) { alert('Нет билета'); return; }
+              var url = '/' + slug + '/my?ticket=' + encodeURIComponent(ticket);
+              window.open(url, '_blank', 'noopener,noreferrer');
+            } catch (e) { alert('Ошибка: ' + (e.message || e)); }
+          });
+        });
 
         document.querySelectorAll('.limits-table .btn-block').forEach(function(btn) {
           btn.addEventListener('click', async function() {
