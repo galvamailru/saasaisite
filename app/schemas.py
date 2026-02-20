@@ -170,7 +170,7 @@ class AdminPromptResponse(BaseModel):
       - prod_system_prompt — боевой промпт (iframe);
       - prev_prod_system_prompt — предыдущая версия боевого промпта (для отката).
 
-    Для админ-бота — собственный промпт (admin_system_prompt). В контекст модели подставляется тестовый промпт бота-клиента.
+    Три промпта: test_system_prompt — тестовый чат-бот; prod (system_prompt) — iframe-бот; admin_system_prompt — бот администратора.
     """
     system_prompt: str | None = None
     prod_system_prompt: str | None = None
