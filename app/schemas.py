@@ -125,6 +125,8 @@ class ProfileResponse(BaseModel):
     gallery_max_images_per_group: int | None = None
     # Ссылка для регистрации webhook бота в Telegram (POST сюда получает обновления)
     telegram_webhook_url: str | None = None
+    # True, если токен бота уже сохранён (сам токен в API не отдаётся)
+    telegram_bot_token_set: bool = False
 
     class Config:
         from_attributes = True

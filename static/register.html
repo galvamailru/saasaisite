@@ -204,14 +204,7 @@
             document.getElementById('err').style.display = 'block';
             return;
           }
-          let msg = 'Письмо с подтверждением отправлено на ' + email + '. Перейдите по ссылке в письме.';
-          if (data.tenant_slug) {
-            msg += ' После подтверждения войдите по ссылке: ';
-            const loginUrl = window.location.origin + '/' + data.tenant_slug + '/login';
-            document.getElementById('msg').innerHTML = msg + '<a href="' + loginUrl + '">' + loginUrl + '</a>';
-          } else {
-            document.getElementById('msg').textContent = msg;
-          }
+          document.getElementById('msg').textContent = 'Письмо с подтверждением отправлено на ' + email + '. Перейдите по ссылке в письме.';
           document.getElementById('msg').style.display = 'block';
           document.getElementById('form').reset();
         } catch (err) {

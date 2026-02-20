@@ -363,8 +363,8 @@
       function renderAuthLinks() {
         const token = localStorage.getItem('cip_access_token');
         const el = document.getElementById('authLinks');
-        const toggler = document.getElementById('adminChatToggler');
-        if (toggler) toggler.style.display = token ? '' : 'none';
+        const togglerWrap = document.querySelector('.admin-chat-toggler-wrap');
+        if (togglerWrap) togglerWrap.style.display = 'none';
         if (token) {
           el.innerHTML = '<span id="authUserInfo"></span> <a href="#" id="logoutBtn">Выйти</a>';
           const btn = document.getElementById('logoutBtn');
@@ -417,6 +417,8 @@
         document.querySelectorAll('nav a[data-page="admin-prompt"], nav a[data-page="mcp-servers"], nav a[data-page="users"]').forEach(function(a) {
           a.style.display = isAdminTenant ? '' : 'none';
         });
+        var togglerWrap = document.querySelector('.admin-chat-toggler-wrap');
+        if (togglerWrap) togglerWrap.style.display = isAdminTenant ? '' : 'none';
       }
 
       function setLinks() {
@@ -1471,7 +1473,9 @@
         html += '<div class="form-row"><label>Ссылка для Telegram (webhook)</label>';
         html += '<div class="profile-telegram-row"><input type="text" id="profileTelegramWebhookUrl" readonly value="' + escapeHtml(telegramUrl) + '" class="profile-telegram-url-input"><button type="button" id="profileCopyTelegramBtn" class="btn-copy-telegram">Копировать</button></div>';
         html += '<p class="hint" style="margin-top:0.35rem;">Укажите эту ссылку в setWebhook для вашего бота. Ниже задайте токен бота (от @BotFather), чтобы чат мог отвечать в Telegram.</p></div>';
-        html += '<div class="form-row"><label for="profileTelegramBotToken">Токен бота Telegram (от BotFather)</label><input type="password" id="profileTelegramBotToken" value="" placeholder="Оставьте пустым, чтобы не менять" maxlength="256" autocomplete="off"></div>';
+        var tokenPlaceholder = p.telegram_bot_token_set ? 'Введите новый токен, чтобы заменить' : 'Оставьте пустым, чтобы не менять';
+        var tokenSetHint = p.telegram_bot_token_set ? ' <span class="hint" style="color:var(--success);">Токен задан</span>' : '';
+        html += '<div class="form-row"><label for="profileTelegramBotToken">Токен бота Telegram (от BotFather)</label><input type="password" id="profileTelegramBotToken" value="" placeholder="' + tokenPlaceholder + '" maxlength="256" autocomplete="off">' + tokenSetHint + '</div>';
         html += '<div class="form-row"><label>Цветовая гамма чата бота</label><div class="theme-options" id="profileThemeOptions">';
         CHAT_THEMES.forEach(function(t) {
           var sel = t.id === currentTheme ? ' selected' : '';

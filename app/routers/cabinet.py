@@ -386,6 +386,7 @@ async def get_user_profile(
     _base = (_settings.public_api_base_url or _settings.frontend_base_url or "").strip().rstrip("/")
     _slug = (getattr(tenant, "slug", None) or "").strip()
     telegram_webhook_url = f"{_base}/api/v1/tenants/by-slug/{_slug}/telegram/webhook" if _base and _slug else (f"{_base}/api/v1/tenants/{tenant_id}/telegram/webhook" if _base else None)
+    telegram_bot_token_set = bool((settings.get("telegram_bot_token") or "").strip())
     if not profile:
         return ProfileResponse(
             user_id=user_id,
@@ -401,6 +402,7 @@ async def get_user_profile(
             gallery_max_groups=limits["gallery_max_groups"],
             gallery_max_images_per_group=limits["gallery_max_images_per_group"],
             telegram_webhook_url=telegram_webhook_url,
+            telegram_bot_token_set=telegram_bot_token_set,
         )
     return ProfileResponse(
         user_id=profile.user_id,
@@ -416,6 +418,7 @@ async def get_user_profile(
         gallery_max_groups=limits["gallery_max_groups"],
         gallery_max_images_per_group=limits["gallery_max_images_per_group"],
         telegram_webhook_url=telegram_webhook_url,
+        telegram_bot_token_set=telegram_bot_token_set,
     )
 
 
@@ -452,6 +455,7 @@ async def update_user_profile(
     _slug = (getattr(tenant, "slug", None) or "").strip()
     telegram_webhook_url = f"{_base}/api/v1/tenants/by-slug/{_slug}/telegram/webhook" if _base and _slug else (f"{_base}/api/v1/tenants/{tenant_id}/telegram/webhook" if _base else None)
     limits = _get_limits_from_settings(settings)
+    telegram_bot_token_set = bool((settings.get("telegram_bot_token") or "").strip())
     return ProfileResponse(
         user_id=profile.user_id,
         role=None,
@@ -461,6 +465,7 @@ async def update_user_profile(
         chat_theme=settings.get("chat_theme"),
         quick_reply_buttons=settings.get("quick_reply_buttons"),
         telegram_webhook_url=telegram_webhook_url,
+        telegram_bot_token_set=telegram_bot_token_set,
         chat_max_user_message_chars=limits["chat_max_user_message_chars"],
         user_prompt_max_chars=limits["user_prompt_max_chars"],
         rag_max_documents=limits["rag_max_documents"],
