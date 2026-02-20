@@ -384,7 +384,8 @@ async def get_user_profile(
     contact = profile.contact if profile else None
     from app.config import settings as _settings
     _base = (_settings.public_api_base_url or _settings.frontend_base_url or "").strip().rstrip("/")
-    telegram_webhook_url = f"{_base}/api/v1/tenants/{tenant_id}/telegram/webhook" if _base else None
+    _slug = (getattr(tenant, "slug", None) or "").strip()
+    telegram_webhook_url = f"{_base}/api/v1/tenants/by-slug/{_slug}/telegram/webhook" if _base and _slug else (f"{_base}/api/v1/tenants/{tenant_id}/telegram/webhook" if _base else None)
     if not profile:
         return ProfileResponse(
             user_id=user_id,
@@ -448,7 +449,8 @@ async def update_user_profile(
     await db.flush()
     settings = tenant.settings or {}
     _base = (app_settings.public_api_base_url or app_settings.frontend_base_url or "").strip().rstrip("/")
-    telegram_webhook_url = f"{_base}/api/v1/tenants/{tenant_id}/telegram/webhook" if _base else None
+    _slug = (getattr(tenant, "slug", None) or "").strip()
+    telegram_webhook_url = f"{_base}/api/v1/tenants/by-slug/{_slug}/telegram/webhook" if _base and _slug else (f"{_base}/api/v1/tenants/{tenant_id}/telegram/webhook" if _base else None)
     limits = _get_limits_from_settings(settings)
     return ProfileResponse(
         user_id=profile.user_id,

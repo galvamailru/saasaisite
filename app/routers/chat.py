@@ -15,7 +15,7 @@ from app.schemas import ChatMessageResponse, ChatRequest
 from app.services.chat_service import get_or_create_dialog, get_dialog_messages_for_llm, save_message
 from app.services.leads import save_lead_if_contact
 from app.services.prompt_loader import get_welcome_for_tenant, load_prompt_for_tenant, load_test_prompt_for_tenant
-from app.services.cabinet_service import get_tenant_by_id
+from app.services.cabinet_service import get_tenant_by_id, get_tenant_by_slug
 from app.services.user_chat_mcp_service import run_user_chat_with_mcp_tools
 from app.services.test_chat_history import get_test_history, save_test_history
 
@@ -177,38 +177,30 @@ async def post_message_json(
     return ChatMessageResponse(reply=reply)
 
 
-@router.post("/{tenant_id:uuid}/telegram/webhook")
-async def telegram_webhook(
-    tenant_id: UUID,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Webhook для Telegram: Telegram шлёт сюда POST с телом Update.
-    Мы получаем ответ боевого чата и доставляем его пользователю в Telegram одним исходящим запросом sendMessage — для этого нужен токен бота (tenant.settings.telegram_bot_token).
-    """
+async def _telegram_webhook_handle(tenant_id: UUID, request: Request, db: AsyncSession):
+    """Общая логика webhook: парсим Update, получаем ответ чата, шлём в Telegram через sendMessage."""
     try:
         body = await request.json()
     except Exception:
-        return {}
+        return
     message = body.get("message") if isinstance(body, dict) else None
     if not message or not isinstance(message, dict):
-        return {}
+        return
     text = (message.get("text") or "").strip()
     from_obj = message.get("from") or {}
     chat_obj = message.get("chat") or {}
     from_id = from_obj.get("id")
     chat_id = chat_obj.get("id")
     if from_id is None or chat_id is None:
-        return {}
+        return
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
-        return {}
+        return
     settings = getattr(tenant, "settings", None) or {}
     bot_token = (settings.get("telegram_bot_token") or "").strip()
     if not bot_token:
         _log.warning("telegram_webhook: tenant %s has no telegram_bot_token", tenant_id)
-        return {}
+        return
     user_id = f"tg_{from_id}"
     reply_text = ""
     if not text:
@@ -234,6 +226,35 @@ async def telegram_webhook(
                 _log.warning("telegram sendMessage failed: %s %s", r.status_code, r.text)
     except Exception as e:
         _log.exception("telegram sendMessage request failed: %s", e)
+
+
+@router.post("/by-slug/{slug}/telegram/webhook")
+async def telegram_webhook_by_slug(
+    slug: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Webhook для Telegram по slug тенанта (например u0cbbedb980f3).
+    URL для регистрации в setWebhook показывается в профиле кабинета.
+    """
+    tenant = await get_tenant_by_slug(db, slug)
+    if not tenant:
+        return {}
+    await _telegram_webhook_handle(tenant.id, request, db)
+    return {}
+
+
+@router.post("/{tenant_id:uuid}/telegram/webhook")
+async def telegram_webhook(
+    tenant_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Webhook для Telegram по UUID тенанта. Альтернатива: .../by-slug/{slug}/telegram/webhook.
+    """
+    await _telegram_webhook_handle(tenant_id, request, db)
     return {}
 
 
