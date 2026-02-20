@@ -1,28 +1,31 @@
-"""Промпт админ-бота: системный промпт тенанта + чанки (вопрос + детальное описание)."""
+"""Промпт админ-бота: читает и сохраняет тестовый промпт пользовательского бота (settings['test_system_prompt']).
+Чанки — отдельно (вопрос + детальное описание)."""
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import AdminPromptChunk, Tenant
+from app.services.prompt_loader import load_test_prompt_for_tenant
 
 
-async def get_admin_system_prompt(db: AsyncSession, tenant_id: UUID) -> str | None:
-    """Системный промпт админ-бота для тенанта (или None)."""
-    r = await db.execute(select(Tenant.admin_system_prompt).where(Tenant.id == tenant_id))
-    row = r.one_or_none()
-    return row[0] if row else None
+async def get_admin_system_prompt(db: AsyncSession, tenant_id: UUID) -> str:
+    """Системный промпт админ-бота: тестовый промпт тенанта (test_system_prompt → system_prompt → файл)."""
+    return await load_test_prompt_for_tenant(db, tenant_id)
 
 
 async def set_admin_system_prompt(db: AsyncSession, tenant_id: UUID, content: str | None) -> str | None:
-    """Установить системный промпт админ-бота. Возвращает новое значение."""
+    """Установить системный промпт админ-бота = тестовый промпт. Сохраняет в settings['test_system_prompt']."""
     r = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     tenant = r.scalar_one_or_none()
     if not tenant:
         return None
-    tenant.admin_system_prompt = (content or "").strip() or None
+    text = (content or "").strip() or None
+    settings = dict(tenant.settings or {})
+    settings["test_system_prompt"] = text
+    tenant.settings = settings
     await db.flush()
-    return tenant.admin_system_prompt
+    return text
 
 
 async def list_admin_chunks(db: AsyncSession, tenant_id: UUID) -> list[AdminPromptChunk]:

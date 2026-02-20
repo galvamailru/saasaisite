@@ -64,16 +64,6 @@
       text-decoration: none;
     }
     .msg.assistant a:hover { text-decoration: underline; }
-    .msg.assistant .chat-gallery-img {
-      display: block;
-      max-width: 100%;
-      max-height: 280px;
-      width: auto;
-      height: auto;
-      border-radius: 12px;
-      margin: 0.5rem 0;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
     .typing-dots { display: inline-flex; gap: 2px; align-items: center; }
     .typing-dots span {
       animation: typing-dot 1.2s ease-in-out infinite;
@@ -85,54 +75,6 @@
     @keyframes typing-dot {
       0%, 60%, 100% { opacity: 0.4; transform: translateY(0); }
       30% { opacity: 1; transform: translateY(-2px); }
-    }
-    .content-strip {
-      padding: 0.75rem 1.25rem;
-      border-top: 1px solid #eee;
-      background: #fafafa;
-      overflow-x: auto;
-      overflow-y: hidden;
-      display: none;
-    }
-    .content-strip.has-cards { display: block; }
-    .content-strip-inner {
-      display: flex;
-      gap: 1rem;
-      padding-bottom: 0.25rem;
-    }
-    .content-card {
-      flex: 0 0 180px;
-      border-radius: 12px;
-      overflow: hidden;
-      background: #fff;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-      text-decoration: none;
-      color: inherit;
-      display: block;
-      transition: transform 0.2s;
-    }
-    .content-card:hover { transform: translateY(-2px); }
-    .content-card-img {
-      width: 100%;
-      height: 120px;
-      object-fit: cover;
-      background: #e0e0e0;
-    }
-    .content-card-img.fallback {
-      object-fit: none;
-      background: #e3f2fd;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 2rem;
-    }
-    .content-card-caption {
-      padding: 0.5rem 0.75rem;
-      font-size: 0.85rem;
-      color: #333;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
     .input-area {
       padding: 1rem 1.25rem;
@@ -198,10 +140,6 @@
   <div class="chat-card">
     <div id="messages"></div>
 
-    <div class="content-strip" id="contentStrip">
-      <div class="content-strip-inner" id="contentStripInner"></div>
-    </div>
-
     <div class="input-area">
       <p class="input-hint" id="inputHint">Напишите сообщение или выберите подсказку</p>
       <div class="quick-pills" id="quickPills"></div>
@@ -244,8 +182,6 @@
           }
         }
       });
-
-      const contentCards = [];
 
       function escapeHtml(s) {
         const div = document.createElement('div');
@@ -297,8 +233,8 @@
         return tmp.innerHTML;
       }
 
-      /** Разбивает текст на сегменты [HTML]...[/HTML] и обычный текст; возвращает итоговый HTML для отображения. */
-      function processHtmlBlocksAndText(text, lineToHtml) {
+      /** Разбивает текст на сегменты [HTML]...[/HTML] и обычный текст. Только [HTML]-блоки рендерятся как HTML (после санитизации), остальное — экранированный текст. */
+      function processHtmlBlocksAndText(text) {
         var parts = [];
         var lastIndex = 0;
         HTML_BLOCK_RE.lastIndex = 0;
@@ -307,7 +243,7 @@
           if (m.index > lastIndex) {
             var textSegment = text.slice(lastIndex, m.index);
             var lines = textSegment.split('\n');
-            parts.push(lines.map(function(l) { return lineToHtml(l); }).join('<br>'));
+            parts.push(lines.map(function(l) { return escapeHtml((l || '').trim()); }).join('<br>'));
           }
           parts.push(sanitizeHtmlForChat(m[1]));
           lastIndex = HTML_BLOCK_RE.lastIndex;
@@ -315,118 +251,21 @@
         if (lastIndex < text.length) {
           var rest = text.slice(lastIndex);
           var lines = rest.split('\n');
-          parts.push(lines.map(function(l) { return lineToHtml(l); }).join('<br>'));
+          parts.push(lines.map(function(l) { return escapeHtml((l || '').trim()); }).join('<br>'));
         }
         return parts.join('');
       }
 
-      /** После экранирования возвращает в разметку только безопасные инлайн-теги (strong, b, em, i). */
-      function unescapeSafeInlineTags(escapedStr) {
-        return (escapedStr || '')
-          .replace(/&lt;strong&gt;/gi, '<strong>').replace(/&lt;\/strong&gt;/gi, '</strong>')
-          .replace(/&lt;b&gt;/gi, '<b>').replace(/&lt;\/b&gt;/gi, '</b>')
-          .replace(/&lt;em&gt;/gi, '<em>').replace(/&lt;\/em&gt;/gi, '</em>')
-          .replace(/&lt;i&gt;/gi, '<i>').replace(/&lt;\/i&gt;/gi, '</i>');
-      }
-
-      var galleryUrlRegex = /(https?:\/\/[^\s]+\/me\/gallery\/groups\/[^\s]+\/images\/[^\s]+\/file)/gi;
-
-      function isGalleryImageUrl(line) {
-        const t = (line || '').trim();
-        return /^https?:\/\/[^\s]+$/i.test(t) && t.indexOf('/me/gallery/groups/') !== -1 && t.indexOf('/images/') !== -1 && t.indexOf('/file') !== -1;
-      }
-
-      function lineToHtmlWithGalleryImgs(line) {
-        const trimmed = (line || '').trim();
-        if (!trimmed) return '';
-        if (isGalleryImageUrl(trimmed)) {
-          return '<img src="' + escapeHtml(trimmed) + '" alt="" class="chat-gallery-img" loading="lazy">';
-        }
-        var parts = trimmed.split(galleryUrlRegex);
-        if (parts.length === 1) {
-          var escaped = escapeHtml(trimmed);
-          escaped = unescapeSafeInlineTags(escaped);
-          var linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
-          return escaped.replace(linkRegex, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
-        }
-        function isGalleryUrl(s) {
-          return (s || '').indexOf('/me/gallery/groups/') !== -1 && (s || '').indexOf('/images/') !== -1 && (s || '').indexOf('/file') !== -1;
-        }
-        var out = '';
-        for (var i = 0; i < parts.length; i++) {
-          if (isGalleryUrl(parts[i])) {
-            out += '<img src="' + escapeHtml(parts[i]) + '" alt="" class="chat-gallery-img" loading="lazy">';
-          } else {
-            var esc = escapeHtml(parts[i]);
-            esc = unescapeSafeInlineTags(esc);
-            out += esc.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, function(_, t, u) { return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a>'; });
-          }
-        }
-        return out;
-      }
-
-      function linkifyAndStripFiles(text) {
-        const fileRegex = /\[Файл:\s*([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
-        const files = [];
-        let cleaned = text.replace(fileRegex, (_, name, url) => {
-          files.push({ name: name.trim(), url });
-          return '';
-        }).trim().replace(/\n{2,}/g, '\n\n');
-        var html = processHtmlBlocksAndText(cleaned, lineToHtmlWithGalleryImgs);
-        return { html: html || '—', files };
-      }
-
-      function addMsg(role, text, opts) {
+      function addMsg(role, text) {
         const div = document.createElement('div');
         div.className = 'msg ' + role;
-        if (role === 'assistant' && (opts && opts.files && opts.files.length)) {
-          const { html, files } = opts.filesProcessed || linkifyAndStripFiles(text);
-          div.innerHTML = html || '—';
-          files.forEach(f => addContentCard(f.name, f.url));
-        } else if (role === 'assistant') {
-          const { html } = linkifyAndStripFiles(text);
-          div.innerHTML = html || escapeHtml(text).replace(/\n/g, '<br>');
+        if (role === 'assistant') {
+          div.innerHTML = processHtmlBlocksAndText(text) || '—';
         } else {
           div.textContent = text;
         }
         document.getElementById('messages').appendChild(div);
         div.scrollIntoView({ behavior: 'smooth' });
-      }
-
-      function addContentCard(caption, url) {
-        contentCards.push({ caption, url });
-        const strip = document.getElementById('contentStrip');
-        const inner = document.getElementById('contentStripInner');
-        const card = document.createElement('a');
-        card.className = 'content-card';
-        card.href = url;
-        card.target = '_blank';
-        card.rel = 'noopener';
-        const isImage = /\.(jpe?g|png|gif|webp)$/i.test(url) || caption.match(/\.(jpe?g|png|gif|webp)$/i);
-        if (isImage) {
-          const im = document.createElement('img');
-          im.className = 'content-card-img';
-          im.src = url;
-          im.alt = caption;
-          im.onerror = () => {
-            const div = document.createElement('div');
-            div.className = 'content-card-img fallback';
-            div.textContent = '📄';
-            im.replaceWith(div);
-          };
-          card.appendChild(im);
-        } else {
-          const fallback = document.createElement('div');
-          fallback.className = 'content-card-img fallback';
-          fallback.textContent = '📄';
-          card.appendChild(fallback);
-        }
-        const cap = document.createElement('div');
-        cap.className = 'content-card-caption';
-        cap.textContent = caption;
-        card.appendChild(cap);
-        inner.appendChild(card);
-        strip.classList.add('has-cards');
       }
 
       function renderPills(suggestions) {
@@ -505,7 +344,6 @@
         document.getElementById('messages').appendChild(assistantEl);
         assistantEl.scrollIntoView({ behavior: 'smooth' });
         let full = '';
-        let filesProcessed = null;
         try {
           const body = { user_id: userId, message: text };
           if (dialogId) body.dialog_id = dialogId;
@@ -550,9 +388,7 @@
           }
 
           if (full) {
-            filesProcessed = linkifyAndStripFiles(full);
-            assistantEl.innerHTML = filesProcessed.html || '—';
-            filesProcessed.files.forEach(f => addContentCard(f.name, f.url));
+            assistantEl.innerHTML = processHtmlBlocksAndText(full) || '—';
             assistantEl.scrollIntoView({ behavior: 'smooth' });
             if (!isTestMode) {
               try {

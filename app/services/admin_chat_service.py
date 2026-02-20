@@ -23,10 +23,13 @@ ADMIN_SYSTEM_PROMPT_FALLBACK = """Ты — Админ-помощник. Помо
 
 
 async def _get_admin_prompt_assembled(db: AsyncSession, tenant_id: UUID) -> str:
-    """Системный промпт админ-бота: из БД или из файла по умолчанию."""
-    system = await get_admin_system_prompt(db, tenant_id)
-    if system and system.strip():
-        return system.strip()
+    """Системный промпт админ-бота: тестовый промпт (test_system_prompt → файл), при ошибке — файл админ-бота или fallback."""
+    try:
+        system = await get_admin_system_prompt(db, tenant_id)
+        if system and system.strip():
+            return system.strip()
+    except FileNotFoundError:
+        pass
     try:
         return load_admin_prompt()
     except FileNotFoundError:
