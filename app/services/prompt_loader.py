@@ -54,6 +54,32 @@ async def load_test_prompt_for_tenant(db: AsyncSession, tenant_id: UUID) -> str:
     return load_prompt()
 
 
+def load_welcome_message_from_file(base_dir: Path | None = None) -> str:
+    """Приветствие по умолчанию из файла (показывается при открытии чата)."""
+    path = settings.get_welcome_message_path(base_dir)
+    if not path.exists():
+        raise FileNotFoundError(f"Welcome message file not found: {path}")
+    return path.read_text(encoding="utf-8").strip()
+
+
+async def get_welcome_for_tenant(
+    db: AsyncSession,
+    tenant_id: UUID,
+    is_test: bool = False,
+) -> str:
+    """
+    Приветствие для чата тенанта.
+    Берётся из tenant.welcome_message; если пусто — из файла по умолчанию.
+    is_test не меняет приветствие (один текст для тестового и боевого чата).
+    """
+    r = await db.execute(select(Tenant.welcome_message).where(Tenant.id == tenant_id))
+    row = r.one_or_none()
+    text = (row[0] or "").strip() if row else ""
+    if text:
+        return text
+    return load_welcome_message_from_file()
+
+
 def load_admin_prompt(base_dir: Path | None = None) -> str:
     """Промпт агента в личном кабинете."""
     path = settings.get_admin_prompt_path(base_dir)

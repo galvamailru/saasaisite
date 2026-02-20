@@ -32,6 +32,7 @@ from app.schemas import (
     LimitsUpdate,
     TenantWithLimitsItem,
     BlockTenantUpdate,
+    WelcomeMessageUpdate,
 )
 from app.services.auth_service import create_impersonation_ticket
 from app.services.cabinet_service import (
@@ -391,11 +392,13 @@ def _build_user_prompt_response(tenant) -> AdminPromptResponse:
     if not test:
         test = prod or None
     prev_prod = (settings.get("prod_system_prompt_prev") or "").strip() or None
+    welcome = (getattr(tenant, "welcome_message", None) or "").strip() or None
     return AdminPromptResponse(
         system_prompt=test,
         test_system_prompt=test,
         prod_system_prompt=prod,
         prev_prod_system_prompt=prev_prod,
+        welcome_message=welcome,
     )
 
 
@@ -433,6 +436,22 @@ async def patch_user_prompt(
         settings = dict(tenant.settings or {})
         settings["test_system_prompt"] = text or None
         tenant.settings = settings
+    await db.flush()
+    return _build_user_prompt_response(tenant)
+
+
+@router.patch("/{tenant_id:uuid}/me/prompt/welcome", response_model=AdminPromptResponse)
+async def patch_welcome_message(
+    tenant_id: UUID,
+    body: WelcomeMessageUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    if body.welcome_message is not None:
+        tenant.welcome_message = (body.welcome_message or "").strip() or None
     await db.flush()
     return _build_user_prompt_response(tenant)
 

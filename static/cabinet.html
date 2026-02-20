@@ -144,6 +144,8 @@
     .leads-list .lead-item .meta { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem; }
     .leads-list .lead-item .lead-date { font-weight: 500; color: var(--accent); margin-top: 0.25rem; font-family: var(--font-mono); }
     .admin-prompt-system { margin-bottom: 1.5rem; }
+    .admin-prompt-system.welcome-block { margin-bottom: 1rem; }
+    .admin-prompt-system.welcome-block textarea { min-height: 80px; }
     .admin-prompt-system label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: var(--text); font-size: 0.9rem; }
     .admin-prompt-system textarea { min-height: 300px; }
     .admin-chunk-card { border: 1px solid var(--border); background: rgba(88,166,255,0.04); }
@@ -233,8 +235,8 @@
     .pagination { margin-top: 0.75rem; display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
     .pagination button { padding: 0.25rem 0.6rem; font-size: 0.8rem; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
     .pagination button[disabled] { opacity: 0.5; cursor: default; }
-    .limits-table-wrap { width: 100%; overflow-x: auto; margin-top: 0.75rem; }
-    .limits-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 0.9rem; }
+    .limits-table-wrap { width: 100%; margin-top: 0.75rem; }
+    .limits-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
     .limits-table th, .limits-table td { padding: 0.5rem 0.75rem; text-align: left; border: 1px solid var(--border); }
     .limits-table th { background: var(--surface); font-weight: 600; }
     .limits-table tbody tr:hover { background: rgba(88,166,255,0.04); }
@@ -518,8 +520,16 @@
         const prevProdPromptVal = (data && (data.prev_prod_system_prompt != null && data.prev_prod_system_prompt !== undefined))
           ? String(data.prev_prod_system_prompt)
           : '';
+        const welcomeVal = (data && (data.welcome_message != null && data.welcome_message !== undefined))
+          ? String(data.welcome_message)
+          : '';
 
         let html = '<h2>Промпт чат-бота</h2>';
+        html += '<div class="admin-prompt-system welcome-block">';
+        html += '<label>Приветствие (показывается при открытии чата)</label>';
+        html += '<textarea id="userWelcomeMessage" placeholder="Например: Привет! Я ИИ Помощник. Чем могу помочь?" rows="3" style="min-height:80px;"></textarea>';
+        html += '<div style="margin-top:0.5rem;"><button type="button" id="saveWelcomeMessage">Сохранить приветствие</button></div>';
+        html += '</div>';
         html += '<p class="hint">Отдельные промпты для тестового чата (в кабинете) и боевого бота (iframe на сайте).</p>';
         html += '<div class="admin-prompt-system">';
         html += '<label>Тестовый промпт (чат в кабинете)</label>';
@@ -542,11 +552,25 @@
         document.getElementById('content').innerHTML = html;
 
         (function setPromptValues() {
+          var welcomeEl = document.getElementById('userWelcomeMessage');
           var testEl = document.getElementById('userTestPrompt');
           var prodEl = document.getElementById('userProdPrompt');
+          if (welcomeEl) welcomeEl.value = welcomeVal || '';
           if (testEl) testEl.value = testPromptVal || '';
           if (prodEl) prodEl.value = prodPromptVal || '';
         })();
+
+        document.getElementById('saveWelcomeMessage').addEventListener('click', async () => {
+          const text = document.getElementById('userWelcomeMessage').value;
+          const res = await fetch(base + '/' + tenantId + '/me/prompt/welcome', {
+            method: 'PATCH',
+            headers: headers(true),
+            body: JSON.stringify({ welcome_message: text })
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) { alert(j.detail || 'Ошибка сохранения приветствия'); return; }
+          alert('Приветствие сохранено.');
+        });
 
         document.getElementById('saveTestPrompt').addEventListener('click', async () => {
           const text = document.getElementById('userTestPrompt').value;
@@ -1521,9 +1545,9 @@
           html += '<td>' + escapeHtml(String(t.gallery_max_groups ?? 3)) + '</td>';
           html += '<td>' + escapeHtml(String(t.gallery_max_images_per_group ?? 3)) + '</td>';
           html += '<td class="actions-cell"><div class="actions-btns">';
-          html += '<button type="button" class="btn-open-tenant" data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '">Перейти</button>';
-          html += '<button type="button" class="btn-block' + (blocked ? ' btn-blocked' : '') + '" data-blocked="' + (blocked ? '1' : '0') + '">' + (blocked ? 'Разблокировать' : 'Заблокировать') + '</button>';
-          html += '<button type="button" class="btn-edit-limits">Изменить</button></div></td></tr>';
+          html += '<button type="button" class="btn-open-tenant" title="Перейти в тенант" data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '">&#8594;</button>';
+          html += '<button type="button" class="btn-block' + (blocked ? ' btn-blocked' : '') + '" title="' + (blocked ? 'Разблокировать' : 'Заблокировать') + '" data-blocked="' + (blocked ? '1' : '0') + '">' + (blocked ? 'Разблок' : 'Блок') + '</button>';
+          html += '<button type="button" class="btn-edit-limits" title="Изменить ограничения">&#9998;</button></div></td></tr>';
         }
         html += '</tbody></table></div>';
         var from = offset + 1;

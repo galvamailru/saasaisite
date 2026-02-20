@@ -11,7 +11,7 @@ from app.database import get_db
 from app.schemas import ChatRequest
 from app.services.chat_service import get_or_create_dialog, get_dialog_messages_for_llm, save_message
 from app.services.leads import save_lead_if_contact
-from app.services.prompt_loader import load_prompt_for_tenant, load_test_prompt_for_tenant
+from app.services.prompt_loader import get_welcome_for_tenant, load_prompt_for_tenant, load_test_prompt_for_tenant
 from app.services.cabinet_service import get_tenant_by_id
 from app.services.user_chat_mcp_service import run_user_chat_with_mcp_tools
 
@@ -144,22 +144,12 @@ async def get_welcome_message(
     db: AsyncSession = Depends(get_db),
     is_test: bool = False,
 ):
-    """Возвращает приветственное сообщение бота по системному промпту (боевому или тестовому при is_test=true)."""
+    """Возвращает приветственное сообщение из БД тенанта или из файла по умолчанию (без вызова модели)."""
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     try:
-        if is_test:
-            prompt = await load_test_prompt_for_tenant(db, tenant_id)
-        else:
-            prompt = await load_prompt_for_tenant(db, tenant_id)
+        text = await get_welcome_for_tenant(db, tenant_id, is_test=is_test)
     except FileNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    instruction = (
-        "Пожалуйста, поприветствуй нового пользователя, кратко представься согласно системному промпту "
-        "и в 1–2 предложениях объясни, чем ты можешь помочь. В конце задай один уточняющий вопрос, "
-        "чтобы начать диалог. Не упоминай, что это тест или что тебя только что инициализировали."
-    )
-    history = [{"role": "user", "content": instruction}]
-    text = await run_user_chat_with_mcp_tools(tenant_id, prompt, history, db)
     return {"message": text}

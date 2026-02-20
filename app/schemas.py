@@ -176,11 +176,15 @@ class AdminPromptResponse(BaseModel):
     prod_system_prompt: str | None = None
     prev_prod_system_prompt: str | None = None
     test_system_prompt: str | None = None
+    welcome_message: str | None = None
 
 
 class AdminPromptUpdate(BaseModel):
-    """Обновление системного промпта админ-бота."""
     system_prompt: str | None = None
+
+
+class WelcomeMessageUpdate(BaseModel):
+    welcome_message: str | None = None
 
 
 # Cabinet: leads (contacts from dialogs)

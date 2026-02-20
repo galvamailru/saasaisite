@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     prompt_file: str = "prompts/system_prompt.txt"
     admin_prompt_file: str = "prompts/admin_chat_prompt.txt"
+    welcome_message_file: str = "prompts/welcome_message.txt"
     app_host: str = "0.0.0.0"
     app_port: int = 8000
 
@@ -62,6 +63,13 @@ class Settings(BaseSettings):
 
     def get_admin_prompt_path(self, base_dir: Path | None = None) -> Path:
         p = Path(self.admin_prompt_file)
+        if not p.is_absolute():
+            base = base_dir if base_dir is not None else PROJECT_ROOT
+            p = base / p
+        return p
+
+    def get_welcome_message_path(self, base_dir: Path | None = None) -> Path:
+        p = Path(self.welcome_message_file)
         if not p.is_absolute():
             base = base_dir if base_dir is not None else PROJECT_ROOT
             p = base / p

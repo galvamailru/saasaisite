@@ -31,6 +31,8 @@ class Tenant(Base):
     prompt_chunks = relationship("PromptChunk", back_populates="tenant", order_by="PromptChunk.position")
     # Системный промпт пользовательского бота (основной), поверх него добавляются чанки prompt_chunk.
     system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Приветствие в чате пользователя (показывается при открытии; если пусто — из файла по умолчанию).
+    welcome_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Системный промпт админ-бота (кабинет).
     admin_system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     admin_prompt_chunks = relationship(
