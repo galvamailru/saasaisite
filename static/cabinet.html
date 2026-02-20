@@ -138,6 +138,8 @@
     .dialog-card { cursor: pointer; transition: border-color 0.2s, background 0.2s; }
     .dialog-card:hover { border-color: var(--accent); background: rgba(88,166,255,0.06); }
     .dialog-card.has-lead { border-left: 3px solid var(--success); background: rgba(63,185,80,0.08); }
+    .dialog-card.viewed { border-color: #d4a017; background: rgba(212,160,23,0.08); }
+    .dialog-card.viewed:hover { border-color: var(--accent); background: rgba(88,166,255,0.06); }
     .dialog-card .dialog-meta { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin-bottom: 0.35rem; font-size: 0.8rem; color: var(--text-muted); font-family: var(--font-mono); }
     .dialog-card .dialog-meta .date { font-weight: 600; color: var(--text); }
     .dialog-card .dialog-meta .msg-count { color: var(--accent); }
@@ -442,7 +444,8 @@
           for (const d of items) {
             const preview = (d.preview || '').slice(0, 80) + (d.preview && d.preview.length > 80 ? '…' : '');
             const leadClass = d.has_lead ? ' has-lead' : '';
-            html += '<div class="dialog-card' + leadClass + '" data-dialog-id="' + escapeHtml(d.id) + '">';
+            const viewedClass = d.viewed_at ? ' viewed' : '';
+            html += '<div class="dialog-card' + leadClass + viewedClass + '" data-dialog-id="' + escapeHtml(d.id) + '">';
             html += '<div class="dialog-meta">';
             html += '<span class="date">' + formatDate(d.updated_at) + '</span>';
             html += '<span class="msg-count">' + (d.message_count || 0) + ' сообщ.</span>';
