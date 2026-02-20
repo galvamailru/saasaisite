@@ -226,14 +226,14 @@ RESET_PASSWORD_EXPIRE_HOURS = 2
 
 
 async def request_password_reset(db: AsyncSession, tenant_id: UUID, email: str) -> TenantUser | None:
-    """Генерирует токен сброса пароля и сохраняет в пользователе. Возвращает пользователя или None."""
+    """Генерирует токен сброса пароля и сохраняет в пользователе. Возвращает пользователя или None.
+    Письмо отправляется и для неподтверждённых пользователей (можно восстановить пароль, затем войти)."""
     email_norm = email.lower().strip()
-    # Поиск без учёта регистра email (на случай старых записей или разных клиентов)
+    # Поиск без учёта регистра email; подтверждение email не требуется — письмо высылаем в любом случае
     result = await db.execute(
         select(TenantUser).where(
             TenantUser.tenant_id == tenant_id,
             func.lower(TenantUser.email) == email_norm,
-            TenantUser.email_confirmed_at.isnot(None),
         )
     )
     user = result.scalar_one_or_none()
@@ -271,6 +271,8 @@ async def set_password_by_reset_token(
     user.password_hash = hash_password(new_password)
     user.reset_password_token = None
     user.reset_password_expires_at = None
+    if user.email_confirmed_at is None:
+        user.email_confirmed_at = datetime.now(timezone.utc)
     await db.flush()
     return user
 

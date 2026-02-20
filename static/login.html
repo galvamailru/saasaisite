@@ -140,7 +140,7 @@
       <button type="submit">Войти</button>
     </form>
     <div class="links">
-      <p><a href="#" id="registerLink">Регистрация в этот тенант</a> · <a href="/register">Создать свой аккаунт</a></p>
+      <p><a href="/register">Создать свой аккаунт</a></p>
       <p><a href="#" id="forgotLink">Забыли пароль?</a></p>
     </div>
   </div>
@@ -153,7 +153,6 @@
         document.getElementById('err').style.display = 'block';
         return;
       }
-      document.getElementById('registerLink').href = '/' + slug + '/register';
       document.getElementById('forgotLink').href = '/' + slug + '/forgot-password';
 
       let tenantId = null;

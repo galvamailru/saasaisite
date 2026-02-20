@@ -163,11 +163,11 @@ async def forgot_password(
         await send_password_reset_email(user.email, tenant.slug, user.reset_password_token)
     else:
         logger.info(
-            "Сброс пароля: письмо не отправлено — пользователь с email %s не найден в тенанте %s или email не подтверждён (нужно перейти по ссылке из письма регистрации).",
+            "Сброс пароля: письмо не отправлено — пользователь с email %s не найден в тенанте %s.",
             body.email,
             slug,
         )
-    return {"message": "Если аккаунт с таким email зарегистрирован и подтверждён, на почту отправлена ссылка для сброса пароля."}
+    return {"message": "Если аккаунт с таким email зарегистрирован, на почту отправлена ссылка для сброса пароля."}
 
 
 @router.post("/by-slug/{slug}/reset-password")
