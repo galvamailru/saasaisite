@@ -317,3 +317,9 @@ async def get_tenant_user_by_id(db: AsyncSession, tenant_id: UUID, user_id: str)
         )
     )
     return result.scalar_one_or_none()
+
+
+async def get_tenant_user_by_primary_key(db: AsyncSession, user_id: UUID) -> TenantUser | None:
+    """Найти TenantUser по первичному ключу (id). Нужно для проверки «домашнего» тенанта при имперсонации."""
+    result = await db.execute(select(TenantUser).where(TenantUser.id == user_id))
+    return result.scalar_one_or_none()

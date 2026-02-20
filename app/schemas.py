@@ -106,6 +106,7 @@ class SavedItemResponse(BaseModel):
 # Cabinet: profile
 class ProfileResponse(BaseModel):
     user_id: str
+    role: str | None = None  # admin | user, для отображения в шапке кабинета
     display_name: str | None = None
     contact: str | None = None
     system_prompt: str | None = None

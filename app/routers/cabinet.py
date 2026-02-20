@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.config import settings as app_settings
-from app.services.auth_service import decode_jwt, get_tenant_user_by_id
+from app.services.auth_service import decode_jwt, get_tenant_user_by_id, get_tenant_user_by_primary_key
 from app.services.test_chat_history import clear_tenant_test_history
 from app.schemas import (
     DialogDetailResponse,
@@ -40,7 +40,6 @@ from app.services.auth_service import create_impersonation_ticket
 from app.services.cabinet_service import (
     get_dialog_messages,
     get_dialog_messages_for_tenant,
-    get_first_confirmed_user_of_tenant,
     get_profile,
     get_saved_by_id,
     get_tenant_by_id,
@@ -145,7 +144,19 @@ async def get_cabinet_user(
     if tenant and (tenant.settings or {}).get("blocked"):
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
     user = await get_tenant_user_by_id(db, tenant_id, user_id)
-    if not user or not user.email_confirmed_at:
+    if not user:
+        try:
+            uid = UUID(user_id)
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Доступ только для зарегистрированных пользователей")
+        home_user = await get_tenant_user_by_primary_key(db, uid)
+        if not home_user or not home_user.email_confirmed_at:
+            raise HTTPException(status_code=403, detail="Доступ только для зарегистрированных пользователей")
+        home_tenant = await get_tenant_by_id(db, home_user.tenant_id)
+        admin_slug = (app_settings.admin_tenant_slug or "").strip()
+        if not admin_slug or not home_tenant or home_tenant.slug != admin_slug:
+            raise HTTPException(status_code=403, detail="Доступ только для зарегистрированных пользователей")
+    elif not user.email_confirmed_at:
         raise HTTPException(status_code=403, detail="Доступ только для зарегистрированных пользователей")
     return user_id
 
@@ -312,6 +323,32 @@ async def delete_saved(
     await db.flush()
 
 
+# Текущий пользователь: является ли админом (текущий тенант или «домашний» тенант = ADMIN_TENANT_SLUG)
+@router.get("/{tenant_id:uuid}/me/is-admin")
+async def get_me_is_admin(
+    tenant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    admin_slug = (app_settings.admin_tenant_slug or "").strip()
+    if not admin_slug:
+        return {"is_admin": False}
+    if tenant.slug == admin_slug:
+        return {"is_admin": True}
+    try:
+        uid = UUID(user_id)
+    except ValueError:
+        return {"is_admin": False}
+    home_user = await get_tenant_user_by_primary_key(db, uid)
+    if not home_user:
+        return {"is_admin": False}
+    home_tenant = await get_tenant_by_id(db, home_user.tenant_id)
+    return {"is_admin": bool(home_tenant and home_tenant.slug == admin_slug)}
+
+
 # Profile
 @router.get("/{tenant_id:uuid}/me/profile", response_model=ProfileResponse)
 async def get_user_profile(
@@ -322,17 +359,35 @@ async def get_user_profile(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    profile = await get_profile(db, tenant_id, user_id)
+    user = await get_tenant_user_by_id(db, tenant_id, user_id)
+    if not user:
+        try:
+            uid = UUID(user_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="user not found")
+        user = await get_tenant_user_by_primary_key(db, uid)
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        profile_tenant_id = user.tenant_id
+        profile_user_id = str(user.id)
+    else:
+        profile_tenant_id = tenant_id
+        profile_user_id = user_id
+    profile = await get_profile(db, profile_tenant_id, profile_user_id)
     system_prompt = tenant.system_prompt if getattr(tenant, "system_prompt", None) else None
     settings = getattr(tenant, "settings", None) or {}
     chat_theme = settings.get("chat_theme")
     quick_reply_buttons = settings.get("quick_reply_buttons")
     limits = _get_limits_from_settings(settings)
+    role = getattr(user, "role", None) or None
+    display_name = profile.display_name if profile else None
+    contact = profile.contact if profile else None
     if not profile:
         return ProfileResponse(
             user_id=user_id,
-            display_name=None,
-            contact=None,
+            role=role,
+            display_name=display_name,
+            contact=contact,
             system_prompt=system_prompt,
             chat_theme=chat_theme,
             quick_reply_buttons=quick_reply_buttons,
@@ -344,6 +399,7 @@ async def get_user_profile(
         )
     return ProfileResponse(
         user_id=profile.user_id,
+        role=role,
         display_name=profile.display_name,
         contact=profile.contact,
         system_prompt=system_prompt,
@@ -565,7 +621,7 @@ async def get_admin_prompt(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     system_prompt = await get_admin_system_prompt(db, tenant_id)
     return AdminPromptResponse(system_prompt=system_prompt)
 
@@ -580,7 +636,7 @@ async def patch_admin_prompt(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     await set_admin_system_prompt(db, tenant_id, body.system_prompt)
     system_prompt = await get_admin_system_prompt(db, tenant_id)
     return AdminPromptResponse(system_prompt=system_prompt)
@@ -596,7 +652,7 @@ async def get_admin_prompt_default(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     try:
         system_prompt = load_admin_prompt()
     except FileNotFoundError:
@@ -975,7 +1031,7 @@ async def mcp_servers_list(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     servers = await list_mcp_servers(db, tenant_id)
     out = []
     for s in servers:
@@ -1013,7 +1069,7 @@ async def mcp_server_create(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     s = await create_mcp_server(
         db, tenant_id, name=body.name, base_url=body.base_url, enabled=body.enabled
     )
@@ -1039,7 +1095,7 @@ async def mcp_server_update(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     server = await get_mcp_server(db, tenant_id, server_id)
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found")
@@ -1070,7 +1126,7 @@ async def mcp_server_delete(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     server = await get_mcp_server(db, tenant_id, server_id)
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found")
@@ -1147,19 +1203,13 @@ async def admin_impersonate_tenant(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     target = await get_tenant_by_id(db, target_tenant_id)
     if not target:
         raise HTTPException(status_code=404, detail="tenant not found")
     if (target.settings or {}).get("blocked"):
         raise HTTPException(status_code=403, detail="Тенант заблокирован")
-    imp_user = await get_first_confirmed_user_of_tenant(db, target_tenant_id)
-    if not imp_user:
-        raise HTTPException(
-            status_code=400,
-            detail="В этом тенанте нет подтверждённых пользователей. Вход от имени администратора невозможен.",
-        )
-    ticket = create_impersonation_ticket(target_tenant_id, str(imp_user.id))
+    ticket = create_impersonation_ticket(target_tenant_id, user_id)
     return {"ticket": ticket, "tenant_slug": target.slug}
 
 
@@ -1177,7 +1227,7 @@ async def admin_block_tenant(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     target = await get_tenant_by_id(db, target_tenant_id)
     if not target:
         raise HTTPException(status_code=404, detail="tenant not found")
@@ -1188,14 +1238,30 @@ async def admin_block_tenant(
     return {"blocked": body.blocked}
 
 
-def _require_admin_tenant(tenant_slug: str) -> None:
-    """Проверка: текущий тенант — администратор (может управлять ограничениями других тенантов)."""
+async def _require_admin_tenant(tenant_slug: str, db: AsyncSession, user_id: str) -> None:
+    """Проверка: текущий тенант — администратор ИЛИ пользователь принадлежит тенанту-администратору (вход в чужой тенант)."""
     admin_slug = (app_settings.admin_tenant_slug or "").strip()
-    if not admin_slug or tenant_slug != admin_slug:
+    if not admin_slug:
         raise HTTPException(
             status_code=403,
             detail="Доступ только для администратора. Задайте ADMIN_TENANT_SLUG в .env для тенанта-администратора.",
         )
+    if tenant_slug == admin_slug:
+        return
+    try:
+        uid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Доступ только для администратора.")
+    home_user = await get_tenant_user_by_primary_key(db, uid)
+    if not home_user:
+        raise HTTPException(status_code=403, detail="Доступ только для администратора.")
+    home_tenant = await get_tenant_by_id(db, home_user.tenant_id)
+    if home_tenant and home_tenant.slug == admin_slug:
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Доступ только для администратора. Задайте ADMIN_TENANT_SLUG в .env для тенанта-администратора.",
+    )
 
 
 # Список всех тенантов с ограничениями (для страницы «Пользователи» у администратора), с пагинацией
@@ -1211,7 +1277,7 @@ async def admin_list_tenants_with_limits(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     total, tenants = await list_all_tenants(db, limit=limit, offset=offset, search=search)
     out = []
     for t in tenants:
@@ -1248,7 +1314,7 @@ async def admin_update_tenant_limits(
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
-    _require_admin_tenant(tenant.slug)
+    await _require_admin_tenant(tenant.slug, db, user_id)
     target = await get_tenant_by_id(db, target_tenant_id)
     if not target:
         raise HTTPException(status_code=404, detail="tenant not found")

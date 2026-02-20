@@ -362,7 +362,7 @@
         const toggler = document.getElementById('adminChatToggler');
         if (toggler) toggler.style.display = token ? '' : 'none';
         if (token) {
-          el.innerHTML = '<a href="#" id="logoutBtn">Выйти</a>';
+          el.innerHTML = '<span id="authUserInfo"></span> <a href="#" id="logoutBtn">Выйти</a>';
           const btn = document.getElementById('logoutBtn');
           if (btn) btn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -386,10 +386,29 @@
 
       let isAdminTenant = false;
       async function ensureAdminFlag() {
+        const token = localStorage.getItem('cip_access_token');
         try {
-          const r = await fetch(base + '/by-slug/' + encodeURIComponent(tenantSlug) + '/is-admin');
-          const d = await r.json().catch(function() { return {}; });
-          isAdminTenant = !!d.is_admin;
+          if (token) {
+            await ensureTenant();
+            const r = await fetch(base + '/' + tenantId + '/me/is-admin', { headers: headers() });
+            const d = await r.json().catch(function() { return {}; });
+            isAdminTenant = !!d.is_admin;
+            var profileR = await fetch(base + '/' + tenantId + '/me/profile', { headers: headers() });
+            if (profileR.ok) {
+              var profile = await profileR.json().catch(function() { return {}; });
+              var infoEl = document.getElementById('authUserInfo');
+              if (infoEl) {
+                var parts = [];
+                if (profile.role) parts.push(profile.role);
+                if (profile.display_name) parts.push(profile.display_name);
+                infoEl.textContent = parts.length ? parts.join(' · ') + ' ' : '';
+              }
+            }
+          } else {
+            const r = await fetch(base + '/by-slug/' + encodeURIComponent(tenantSlug) + '/is-admin');
+            const d = await r.json().catch(function() { return {}; });
+            isAdminTenant = !!d.is_admin;
+          }
         } catch (_) { isAdminTenant = false; }
         document.querySelectorAll('nav a[data-page="admin-prompt"], nav a[data-page="mcp-servers"], nav a[data-page="users"]').forEach(function(a) {
           a.style.display = isAdminTenant ? '' : 'none';
