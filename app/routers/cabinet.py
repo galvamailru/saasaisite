@@ -569,7 +569,7 @@ async def patch_admin_prompt(
     return AdminPromptResponse(system_prompt=system_prompt)
 
 
-# Промпт админ-бота по умолчанию из файла (тот же файл, что и для тестового промпта пользовательского бота)
+# Промпт админ-бота по умолчанию из файла (admin_chat_prompt.txt)
 @router.get("/{tenant_id:uuid}/me/admin-prompt/default", response_model=AdminPromptResponse)
 async def get_admin_prompt_default(
     tenant_id: UUID,
@@ -580,9 +580,9 @@ async def get_admin_prompt_default(
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     try:
-        system_prompt = load_prompt()
+        system_prompt = load_admin_prompt()
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Default prompt file not found")
+        raise HTTPException(status_code=404, detail="Default admin prompt file not found")
     return AdminPromptResponse(system_prompt=system_prompt)
 
 

@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.llm_client import chat_once
-from app.services.prompt_loader import load_admin_prompt, load_prompt_for_tenant
+from app.services.prompt_loader import load_admin_prompt, load_test_prompt_for_tenant
 from app.services.admin_prompt_service import get_admin_system_prompt
 from app.services.cabinet_service import get_tenant_by_id
 from app.services.microservices_client import gallery_request, rag_request
@@ -23,13 +23,10 @@ ADMIN_SYSTEM_PROMPT_FALLBACK = """Ты — Админ-помощник. Помо
 
 
 async def _get_admin_prompt_assembled(db: AsyncSession, tenant_id: UUID) -> str:
-    """Системный промпт админ-бота: тестовый промпт (test_system_prompt → файл), при ошибке — файл админ-бота или fallback."""
-    try:
-        system = await get_admin_system_prompt(db, tenant_id)
-        if system and system.strip():
-            return system.strip()
-    except FileNotFoundError:
-        pass
+    """Системный промпт админ-бота: из БД (admin_system_prompt) или из файла по умолчанию."""
+    system = await get_admin_system_prompt(db, tenant_id)
+    if system and system.strip():
+        return system.strip()
     try:
         return load_admin_prompt()
     except FileNotFoundError:
@@ -68,9 +65,12 @@ async def _fetch_galleries_and_documents(tenant_id: UUID) -> tuple[list[dict], l
 
 
 async def _get_client_system_prompt(db: AsyncSession, tenant_id: UUID) -> str:
-    """Системный промпт бота-клиента (для проверки админ-ботом)."""
-    prompt = await load_prompt_for_tenant(db, tenant_id)
-    return (prompt or "(пусто)").strip()
+    """Тестовый промпт бота-клиента (подставляется в контекст админ-бота для проверки)."""
+    try:
+        prompt = await load_test_prompt_for_tenant(db, tenant_id)
+        return (prompt or "(пусто)").strip()
+    except FileNotFoundError:
+        return "(пусто)"
 
 
 def _build_galleries_and_rag_tail(galleries: list[dict], documents: list[dict]) -> str:
