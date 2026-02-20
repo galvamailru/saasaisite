@@ -229,6 +229,8 @@
       localStorage.setItem('cip_user_id', userId);
       let dialogId = null;
       let isTestMode = false;
+      var welcomePending = null;
+      var welcomeTimeoutId = null;
 
       window.addEventListener('message', function(event) {
         if (event.origin !== window.location.origin) return;
@@ -236,7 +238,10 @@
           userId = event.data.user_id;
           localStorage.setItem('cip_user_id', userId);
           localStorage.setItem('cip_access_token', event.data.token);
-          if (event.data.is_test === true) isTestMode = true;
+          if (event.data.is_test === true) {
+            isTestMode = true;
+            if (welcomePending) { clearTimeout(welcomeTimeoutId); welcomePending(); welcomePending = null; }
+          }
         }
       });
 
@@ -461,16 +466,22 @@
         applyChatTheme(t.chat_theme || 'cyan');
         var suggestions = Array.isArray(t.quick_reply_buttons) && t.quick_reply_buttons.length ? t.quick_reply_buttons : ['Расскажи о вас', 'Какие услуги?', 'Контакты'];
         renderPills(suggestions);
-        // Приветственное сообщение бота, сгенерированное моделью на основе промпта
-        try {
-          const wr = await fetch('/api/v1/tenants/' + tenantId + '/chat/welcome');
-          if (wr.ok) {
-            const wdata = await wr.json();
-            if (wdata && wdata.message) {
-              addMsg('assistant', wdata.message);
-            }
+        // Приветствие: даём время на postMessage (is_test) от родителя; при получении is_test запрашиваем сразу с тестовым промптом
+        (function() {
+          var welcomeDone = false;
+          function fetchWelcome() {
+            if (welcomeDone) return;
+            welcomeDone = true;
+            welcomePending = null;
+            var url = '/api/v1/tenants/' + tenantId + '/chat/welcome';
+            if (isTestMode) url += '?is_test=true';
+            fetch(url).then(function(wr) { return wr.ok ? wr.json() : null; }).then(function(wdata) {
+              if (wdata && wdata.message) addMsg('assistant', wdata.message);
+            }).catch(function() {});
           }
-        } catch (_) {}
+          welcomePending = fetchWelcome;
+          welcomeTimeoutId = setTimeout(fetchWelcome, 200);
+        })();
       }
 
       const form = document.getElementById('form');

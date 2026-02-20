@@ -237,8 +237,9 @@
     .limits-table th, .limits-table td { padding: 0.5rem 0.75rem; text-align: left; border: 1px solid var(--border); }
     .limits-table th { background: var(--surface); font-weight: 600; }
     .limits-table tr:hover { background: rgba(88,166,255,0.04); }
-    .limits-table .btn-edit-limits { padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; }
-    .limits-table .btn-edit-limits:hover { background: rgba(88,166,255,0.1); }
+    .limits-table .btn-edit-limits, .limits-table .btn-block { padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; margin-right: 0.35rem; }
+    .limits-table .btn-edit-limits:hover, .limits-table .btn-block:hover { background: rgba(88,166,255,0.1); }
+    .limits-table .btn-link { color: var(--accent); margin-right: 0.35rem; }
     .limits-edit-panel { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); display: none; }
     .limits-edit-panel.visible { display: block; }
   </style>
@@ -1428,10 +1429,16 @@
         }
       }
 
-      async function loadUsers() {
+      var usersPageSize = 20;
+      var usersPage = 0;
+      var usersTotal = 0;
+
+      async function loadUsers(page) {
+        if (page !== undefined) usersPage = page;
         if (!requireAuth()) return;
         await ensureTenant();
-        const rAdmin = await fetch(base + '/' + tenantId + '/me/admin/tenants', { headers: headers() });
+        var offset = usersPage * usersPageSize;
+        const rAdmin = await fetch(base + '/' + tenantId + '/me/admin/tenants?limit=' + usersPageSize + '&offset=' + offset, { headers: headers() });
         if (rAdmin.status === 403) {
           const data = await rAdmin.json().catch(() => ({}));
           document.getElementById('content').innerHTML =
@@ -1445,25 +1452,38 @@
           document.getElementById('content').innerHTML = '<p class="error">' + escapeHtml(data.detail || 'Ошибка загрузки.') + '</p>';
           return;
         }
-        const tenants = await rAdmin.json();
+        const data = await rAdmin.json();
+        const tenants = data.items || [];
+        usersTotal = data.total || 0;
         let html = '<h2>Пользователи</h2>';
-        html += '<p class="hint">Тенанты и их ограничения. Выберите тенант и нажмите «Изменить», чтобы изменить ограничения для выбранного тенанта.</p>';
+        html += '<p class="hint">Тенанты и их ограничения. Выберите тенант и нажмите «Изменить», чтобы изменить ограничения. Заблокированный тенант не может войти в кабинет.</p>';
         html += '<div class="panel"><table class="limits-table"><thead><tr>';
-        html += '<th>Тенант (slug)</th><th>Название</th>';
+        html += '<th>Тенант (slug)</th><th>Название</th><th>Блок</th>';
         html += '<th>Симв. чата</th><th>Промпт</th><th>RAG док.</th><th>Галерей</th><th>Фото в галерее</th>';
         html += '<th>Действие</th></tr></thead><tbody>';
         for (var i = 0; i < tenants.length; i++) {
           var t = tenants[i];
-          html += '<tr data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '">';
+          var blocked = t.blocked === true;
+          html += '<tr data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '" data-blocked="' + (blocked ? '1' : '0') + '">';
           html += '<td>' + escapeHtml(t.slug || '') + '</td><td>' + escapeHtml(t.name || '') + '</td>';
+          html += '<td>' + (blocked ? 'Да' : 'Нет') + '</td>';
           html += '<td>' + escapeHtml(String(t.chat_max_user_message_chars ?? 500)) + '</td>';
           html += '<td>' + escapeHtml(String(t.user_prompt_max_chars ?? 10000)) + '</td>';
           html += '<td>' + escapeHtml(String(t.rag_max_documents ?? 3)) + '</td>';
           html += '<td>' + escapeHtml(String(t.gallery_max_groups ?? 3)) + '</td>';
           html += '<td>' + escapeHtml(String(t.gallery_max_images_per_group ?? 3)) + '</td>';
-          html += '<td><button type="button" class="btn-edit-limits">Изменить</button></td></tr>';
+          html += '<td><a href="/' + escapeHtml(t.slug || '') + '/my" target="_blank" class="btn-link">Перейти в тенант</a> ';
+          html += '<button type="button" class="btn-block" data-blocked="' + (blocked ? '1' : '0') + '">' + (blocked ? 'Разблокировать' : 'Заблокировать') + '</button> ';
+          html += '<button type="button" class="btn-edit-limits">Изменить</button></td></tr>';
         }
         html += '</tbody></table>';
+        var from = offset + 1;
+        var to = Math.min(offset + tenants.length, usersTotal);
+        html += '<div class="pagination">';
+        if (usersPage > 0) html += '<button type="button" id="usersPrev">← Назад</button> ';
+        html += ' <span>Показано ' + from + '–' + to + ' из ' + usersTotal + '</span>';
+        if (offset + tenants.length < usersTotal) html += ' <button type="button" id="usersNext">Вперёд →</button>';
+        html += '</div>';
         html += '<div id="limitsEditPanel" class="limits-edit-panel">';
         html += '<h3 style="margin-top:0;" id="limitsEditTitle">Ограничения тенанта</h3>';
         html += '<form id="limitsForm"><input type="hidden" id="limitsTargetTenantId" value="">';
@@ -1481,6 +1501,27 @@
         html += '<button type="button" id="limitsEditCancel">Отмена</button></div></form></div></div>';
         document.getElementById('content').innerHTML = html;
 
+        document.getElementById('usersPrev') && document.getElementById('usersPrev').addEventListener('click', function() { loadUsers(usersPage - 1); });
+        document.getElementById('usersNext') && document.getElementById('usersNext').addEventListener('click', function() { loadUsers(usersPage + 1); });
+
+        document.querySelectorAll('.limits-table .btn-block').forEach(function(btn) {
+          btn.addEventListener('click', async function() {
+            var row = btn.closest('tr');
+            var targetId = row.getAttribute('data-tenant-id');
+            var currentlyBlocked = row.getAttribute('data-blocked') === '1';
+            var newBlocked = !currentlyBlocked;
+            if (!confirm(newBlocked ? 'Заблокировать тенант? Пользователь не сможет войти в кабинет.' : 'Разблокировать тенант?')) return;
+            var res = await fetch(base + '/' + tenantId + '/me/admin/tenants/' + targetId + '/block', {
+              method: 'PATCH',
+              headers: Object.assign({ 'Content-Type': 'application/json' }, headers(true)),
+              body: JSON.stringify({ blocked: newBlocked })
+            });
+            var data = await res.json().catch(() => ({}));
+            if (!res.ok) { alert(data.detail || 'Ошибка'); return; }
+            loadUsers();
+          });
+        });
+
         document.querySelectorAll('.limits-table .btn-edit-limits').forEach(function(btn) {
           btn.addEventListener('click', function() {
             var row = btn.closest('tr');
@@ -1489,11 +1530,11 @@
             var cells = row.querySelectorAll('td');
             document.getElementById('limitsTargetTenantId').value = tid;
             document.getElementById('limitsEditTitle').textContent = 'Ограничения тенанта: ' + (slug || tid);
-            document.getElementById('limitChatChars').value = cells[2] ? cells[2].textContent : 500;
-            document.getElementById('limitUserPrompt').value = cells[3] ? cells[3].textContent : 10000;
-            document.getElementById('limitRagDocs').value = cells[4] ? cells[4].textContent : 3;
-            document.getElementById('limitGalleryGroups').value = cells[5] ? cells[5].textContent : 3;
-            document.getElementById('limitGalleryImages').value = cells[6] ? cells[6].textContent : 3;
+            document.getElementById('limitChatChars').value = cells[3] ? cells[3].textContent : 500;
+            document.getElementById('limitUserPrompt').value = cells[4] ? cells[4].textContent : 10000;
+            document.getElementById('limitRagDocs').value = cells[5] ? cells[5].textContent : 3;
+            document.getElementById('limitGalleryGroups').value = cells[6] ? cells[6].textContent : 3;
+            document.getElementById('limitGalleryImages').value = cells[7] ? cells[7].textContent : 3;
             document.getElementById('limitsEditPanel').classList.add('visible');
           });
         });

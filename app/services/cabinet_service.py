@@ -23,11 +23,18 @@ async def get_tenant_by_id(db: AsyncSession, tenant_id: UUID):
     return result.scalar_one_or_none()
 
 
-async def list_all_tenants(db: AsyncSession):
-    """Список всех тенантов (для страницы администратора «Пользователи»)."""
+async def list_all_tenants(
+    db: AsyncSession,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list]:
+    """Список тенантов с пагинацией (для страницы администратора «Пользователи»). Возвращает (total, list)."""
     from app.models import Tenant
-    result = await db.execute(select(Tenant).order_by(Tenant.slug))
-    return list(result.scalars().all())
+    count_q = select(func.count()).select_from(Tenant)
+    total = (await db.execute(count_q)).scalar() or 0
+    q = select(Tenant).order_by(Tenant.slug).limit(limit).offset(offset)
+    result = await db.execute(q)
+    return total, list(result.scalars().all())
 
 
 async def list_dialogs(

@@ -30,6 +30,15 @@ class LoginResponse(BaseModel):
     tenant_id: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
 # Chat (tenant_id from path)
 class ChatRequest(BaseModel):
     user_id: str = Field(..., min_length=1, max_length=64)
@@ -136,11 +145,16 @@ class TenantWithLimitsItem(BaseModel):
     id: UUID
     slug: str
     name: str
+    blocked: bool
     chat_max_user_message_chars: int
     user_prompt_max_chars: int
     rag_max_documents: int
     gallery_max_groups: int
     gallery_max_images_per_group: int
+
+
+class BlockTenantUpdate(BaseModel):
+    blocked: bool
 
 
 # Cabinet: admin/user bot prompt responses

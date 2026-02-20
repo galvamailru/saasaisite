@@ -45,3 +45,11 @@ async def send_confirmation_email(to: str, tenant_slug: str, token: str) -> None
     subject = "Подтверждение регистрации"
     body = f"Перейдите по ссылке для подтверждения email:\n\n{url}\n\nСсылка действительна 24 часа."
     await send_email(to, subject, body)
+
+
+async def send_password_reset_email(to: str, tenant_slug: str, token: str) -> None:
+    base = settings.frontend_base_url.rstrip("/")
+    url = f"{base}/{tenant_slug}/reset-password?token={token}"
+    subject = "Восстановление пароля"
+    body = f"Перейдите по ссылке, чтобы задать новый пароль:\n\n{url}\n\nСсылка действительна 2 часа."
+    await send_email(to, subject, body)

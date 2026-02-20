@@ -142,13 +142,17 @@ async def post_message(
 async def get_welcome_message(
     tenant_id: UUID,
     db: AsyncSession = Depends(get_db),
+    is_test: bool = False,
 ):
-    """Возвращает приветственное сообщение бота, сгенерированное согласно системному промпту."""
+    """Возвращает приветственное сообщение бота по системному промпту (боевому или тестовому при is_test=true)."""
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     try:
-        prompt = await load_prompt_for_tenant(db, tenant_id)
+        if is_test:
+            prompt = await load_test_prompt_for_tenant(db, tenant_id)
+        else:
+            prompt = await load_prompt_for_tenant(db, tenant_id)
     except FileNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
     instruction = (

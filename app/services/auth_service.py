@@ -153,6 +153,89 @@ async def login_user(
     return user
 
 
+async def get_or_create_superadmin_user(
+    db: AsyncSession,
+    tenant_id: UUID,
+    email: str,
+    password: str,
+) -> TenantUser:
+    """Находит или создаёт пользователя с данным email в тенанте (для входа суперадмина по учётке из .env)."""
+    email_norm = email.lower().strip()
+    result = await db.execute(
+        select(TenantUser).where(
+            TenantUser.tenant_id == tenant_id,
+            TenantUser.email == email_norm,
+        )
+    )
+    user = result.scalar_one_or_none()
+    if user:
+        if not user.email_confirmed_at:
+            user.email_confirmed_at = datetime.now(timezone.utc)
+            await db.flush()
+        return user
+    user = TenantUser(
+        tenant_id=tenant_id,
+        email=email_norm,
+        password_hash=hash_password(password),
+        email_confirmed_at=datetime.now(timezone.utc),
+    )
+    db.add(user)
+    await db.flush()
+    return user
+
+
+RESET_PASSWORD_EXPIRE_HOURS = 2
+
+
+async def request_password_reset(db: AsyncSession, tenant_id: UUID, email: str) -> TenantUser | None:
+    """Генерирует токен сброса пароля и сохраняет в пользователе. Возвращает пользователя или None."""
+    email_norm = email.lower().strip()
+    result = await db.execute(
+        select(TenantUser).where(
+            TenantUser.tenant_id == tenant_id,
+            TenantUser.email == email_norm,
+            TenantUser.email_confirmed_at.isnot(None),
+        )
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        return None
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(hours=RESET_PASSWORD_EXPIRE_HOURS)
+    user.reset_password_token = token
+    user.reset_password_expires_at = expires
+    await db.flush()
+    return user
+
+
+async def get_user_by_reset_token(db: AsyncSession, tenant_id: UUID, token: str) -> TenantUser | None:
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(TenantUser).where(
+            TenantUser.tenant_id == tenant_id,
+            TenantUser.reset_password_token == token,
+            TenantUser.reset_password_expires_at > now,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def set_password_by_reset_token(
+    db: AsyncSession,
+    tenant_id: UUID,
+    token: str,
+    new_password: str,
+) -> TenantUser | None:
+    user = await get_user_by_reset_token(db, tenant_id, token)
+    if not user:
+        return None
+    user.password_hash = hash_password(new_password)
+    user.reset_password_token = None
+    user.reset_password_expires_at = None
+    await db.flush()
+    return user
+
+
 async def get_tenant_user_by_id(db: AsyncSession, tenant_id: UUID, user_id: str) -> TenantUser | None:
     try:
         uid = UUID(user_id)

@@ -120,6 +120,28 @@ async def serve_confirm(slug: str, db: AsyncSession = Depends(get_db)) -> FileRe
     return FileResponse(path)
 
 
+@app.get("/{slug}/forgot-password")
+async def serve_forgot_password(slug: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+    tenant = await get_tenant_by_slug(db, slug)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    path = STATIC_DIR / "forgot-password.html"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="forgot-password page not found")
+    return FileResponse(path)
+
+
+@app.get("/{slug}/reset-password")
+async def serve_reset_password(slug: str, db: AsyncSession = Depends(get_db)) -> FileResponse:
+    tenant = await get_tenant_by_slug(db, slug)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    path = STATIC_DIR / "reset-password.html"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="reset-password page not found")
+    return FileResponse(path)
+
+
 @app.get("/")
 async def root():
     """Отдельной главной страницы нет. Редирект на вход демо-тенанта."""

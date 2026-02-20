@@ -31,6 +31,7 @@ from app.schemas import (
     LimitsResponse,
     LimitsUpdate,
     TenantWithLimitsItem,
+    BlockTenantUpdate,
 )
 from app.services.cabinet_service import (
     get_dialog_messages,
@@ -134,6 +135,9 @@ async def get_cabinet_user(
     if not payload or str(payload.get("tenant_id")) != str(tenant_id):
         raise HTTPException(status_code=401, detail="Неверный или истёкший токен")
     user_id = str(payload["sub"])
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if tenant and (tenant.settings or {}).get("blocked"):
+        raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
     user = await get_tenant_user_by_id(db, tenant_id, user_id)
     if not user or not user.email_confirmed_at:
         raise HTTPException(status_code=403, detail="Доступ только для зарегистрированных пользователей")
@@ -1081,6 +1085,31 @@ async def update_limits(
     )
 
 
+# Блокировка/разблокировка тенанта (администратор)
+@router.patch(
+    "/{tenant_id:uuid}/me/admin/tenants/{target_tenant_id:uuid}/block",
+)
+async def admin_block_tenant(
+    tenant_id: UUID,
+    target_tenant_id: UUID,
+    body: BlockTenantUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: str = Depends(get_cabinet_user),
+):
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    _require_admin_tenant(tenant.slug)
+    target = await get_tenant_by_id(db, target_tenant_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="tenant not found")
+    settings = dict(target.settings or {})
+    settings["blocked"] = body.blocked
+    target.settings = settings
+    await db.flush()
+    return {"blocked": body.blocked}
+
+
 def _require_admin_tenant(tenant_slug: str) -> None:
     """Проверка: текущий тенант — администратор (может управлять ограничениями других тенантов)."""
     admin_slug = (app_settings.admin_tenant_slug or "").strip()
@@ -1091,26 +1120,30 @@ def _require_admin_tenant(tenant_slug: str) -> None:
         )
 
 
-# Список всех тенантов с ограничениями (для страницы «Пользователи» у администратора)
-@router.get("/{tenant_id:uuid}/me/admin/tenants", response_model=list[TenantWithLimitsItem])
+# Список всех тенантов с ограничениями (для страницы «Пользователи» у администратора), с пагинацией
+@router.get("/{tenant_id:uuid}/me/admin/tenants")
 async def admin_list_tenants_with_limits(
     tenant_id: UUID,
     db: AsyncSession = Depends(get_db),
     user_id: str = Depends(get_cabinet_user),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ):
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     _require_admin_tenant(tenant.slug)
-    tenants = await list_all_tenants(db)
+    total, tenants = await list_all_tenants(db, limit=limit, offset=offset)
     out = []
     for t in tenants:
-        limits = _get_limits_from_settings(t.settings or {})
+        settings = t.settings or {}
+        limits = _get_limits_from_settings(settings)
         out.append(
             TenantWithLimitsItem(
                 id=t.id,
                 slug=t.slug,
                 name=t.name or t.slug,
+                blocked=bool(settings.get("blocked")),
                 chat_max_user_message_chars=limits["chat_max_user_message_chars"],
                 user_prompt_max_chars=limits["user_prompt_max_chars"],
                 rag_max_documents=limits["rag_max_documents"],
@@ -1118,7 +1151,7 @@ async def admin_list_tenants_with_limits(
                 gallery_max_images_per_group=limits["gallery_max_images_per_group"],
             )
         )
-    return out
+    return {"total": total, "items": out}
 
 
 # Обновление ограничений выбранного тенанта (администратор)

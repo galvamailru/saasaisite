@@ -54,6 +54,8 @@ class TenantUser(Base):
     email_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     confirmation_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
     confirmation_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reset_password_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    reset_password_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="tenant_users")

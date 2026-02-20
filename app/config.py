@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # Тенант-администратор: slug тенанта, пользователи которого могут видеть список всех тенантов и редактировать их ограничения (страница «Пользователи»). Пусто — доступ к списку только у этого тенанта отключён.
     admin_tenant_slug: str = ""
 
+    # Суперадминистратор: вход по логину и паролю из .env (страница входа — как у тенанта: /{admin_tenant_slug}/login, логин = SUPERADMIN_LOGIN).
+    superadmin_login: str = ""
+    superadmin_password: str = ""
+
     def get_prompt_path(self, base_dir: Path | None = None) -> Path:
         p = Path(self.prompt_file)
         if not p.is_absolute():
