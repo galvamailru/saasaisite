@@ -114,6 +114,8 @@ async def register_new_user_with_tenant(
     tenant = Tenant(slug=slug, name=name or "Моё пространство")
     db.add(tenant)
     await db.flush()
+    from app.services.cabinet_service import create_default_mcp_servers_for_tenant
+    await create_default_mcp_servers_for_tenant(db, tenant.id)
     user = await register_user(db, tenant.id, email, password, tenant.slug)
     return user, tenant
 

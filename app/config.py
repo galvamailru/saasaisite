@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     superadmin_login: str = ""
     superadmin_password: str = ""
 
+    # MCP-серверы по умолчанию для новых тенантов: JSON-массив пар [название, url], например [["RAG","http://rag:8020"],["Gallery","http://gallery:8010"]]
+    default_mcp_servers: str = '[["RAG","http://rag:8020"],["Gallery","http://gallery:8010"]]'
+
     def get_prompt_path(self, base_dir: Path | None = None) -> Path:
         p = Path(self.prompt_file)
         if not p.is_absolute():

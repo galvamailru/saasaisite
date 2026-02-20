@@ -56,6 +56,7 @@ class DialogListItem(BaseModel):
     id: UUID
     created_at: datetime
     updated_at: datetime
+    viewed_at: datetime | None = None
     preview: str | None = None
     user_id: str | None = None
     message_count: int = 0

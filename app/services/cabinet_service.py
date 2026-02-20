@@ -1,11 +1,13 @@
 """Cabinet: dialogs list, dialog detail, saved items, profile."""
+import json
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Dialog, Lead, McpServer, Message, SavedItem, UserProfile
+from app.config import settings as app_settings
+from app.models import Dialog, DialogView, Lead, McpServer, Message, SavedItem, UserProfile
 
 
 PREVIEW_MAX_LEN = 120
@@ -101,6 +103,7 @@ async def list_dialogs(
 async def list_tenant_dialogs(
     db: AsyncSession,
     tenant_id: UUID,
+    cabinet_user_id: str,
     limit: int,
     offset: int,
     date_from: date | None = None,
@@ -108,7 +111,7 @@ async def list_tenant_dialogs(
     only_new: bool = False,
     only_leads: bool = False,
 ) -> tuple[int, list]:
-    """Все диалоги тенанта. date_from/date_to — фильтр по updated_at. only_new — только непросмотренные. only_leads — только диалоги с лидом."""
+    """Все диалоги тенанта. Просмотренность — по текущему пользователю кабинета (cabinet_user_id). Лид (has_lead) выставляется сервером при срабатывании regex на контакты."""
     count_q = select(func.count()).select_from(Dialog).where(Dialog.tenant_id == tenant_id)
     q = select(Dialog).where(Dialog.tenant_id == tenant_id)
     if date_from is not None:
@@ -120,8 +123,13 @@ async def list_tenant_dialogs(
         count_q = count_q.where(Dialog.updated_at < dt_to)
         q = q.where(Dialog.updated_at < dt_to)
     if only_new:
-        count_q = count_q.where(Dialog.viewed_at.is_(None))
-        q = q.where(Dialog.viewed_at.is_(None))
+        viewed_by_me = exists().where(
+            DialogView.dialog_id == Dialog.id,
+            DialogView.tenant_id == tenant_id,
+            DialogView.cabinet_user_id == cabinet_user_id,
+        )
+        count_q = count_q.where(~viewed_by_me)
+        q = q.where(~viewed_by_me)
     if only_leads:
         lead_exists = exists().where(Lead.dialog_id == Dialog.id, Lead.tenant_id == tenant_id)
         count_q = count_q.where(lead_exists)
@@ -130,6 +138,18 @@ async def list_tenant_dialogs(
     q = q.order_by(Dialog.updated_at.desc()).limit(limit).offset(offset)
     result = await db.execute(q)
     dialogs = result.scalars().all()
+    dialog_ids = [d.id for d in dialogs]
+    viewed_map: dict[UUID, datetime] = {}
+    if dialog_ids:
+        dv_result = await db.execute(
+            select(DialogView.dialog_id, DialogView.viewed_at).where(
+                DialogView.tenant_id == tenant_id,
+                DialogView.cabinet_user_id == cabinet_user_id,
+                DialogView.dialog_id.in_(dialog_ids),
+            )
+        )
+        for row in dv_result.all():
+            viewed_map[row[0]] = row[1]
     items = []
     for d in dialogs:
         preview = None
@@ -147,27 +167,45 @@ async def list_tenant_dialogs(
         message_count = cnt_result.scalar() or 0
         lead_exists = await db.execute(select(exists().where(Lead.dialog_id == d.id, Lead.tenant_id == tenant_id)))
         has_lead = lead_exists.scalar() or False
-        items.append({"dialog": d, "preview": preview, "message_count": message_count, "has_lead": has_lead})
+        items.append({
+            "dialog": d,
+            "preview": preview,
+            "message_count": message_count,
+            "has_lead": has_lead,
+            "viewed_at": viewed_map.get(d.id),
+        })
     return total, items
 
 
 async def mark_dialog_viewed(
     db: AsyncSession,
     tenant_id: UUID,
+    cabinet_user_id: str,
     dialog_id: UUID,
-) -> Dialog | None:
-    """Пометить диалог как просмотренный: админ хотя бы раз открыл этот диалог в кабинете. Работает для любого диалога."""
-    result = await db.execute(
-        select(Dialog).where(
-            Dialog.id == dialog_id,
-            Dialog.tenant_id == tenant_id,
+) -> datetime | None:
+    """Пометить диалог как просмотренный данным пользователем кабинета. Все диалоги, которые он открывал, остаются в списке прочитанных."""
+    now = datetime.now(timezone.utc)
+    r = await db.execute(
+        select(DialogView).where(
+            DialogView.tenant_id == tenant_id,
+            DialogView.cabinet_user_id == cabinet_user_id,
+            DialogView.dialog_id == dialog_id,
         )
     )
-    dialog = result.scalar_one_or_none()
-    if dialog:
-        dialog.viewed_at = datetime.now(timezone.utc)
+    existing = r.scalar_one_or_none()
+    if existing:
+        existing.viewed_at = now
         await db.flush()
-    return dialog
+        return now
+    dv = DialogView(
+        tenant_id=tenant_id,
+        cabinet_user_id=cabinet_user_id,
+        dialog_id=dialog_id,
+        viewed_at=now,
+    )
+    db.add(dv)
+    await db.flush()
+    return now
 
 
 async def get_dialog_messages(
@@ -326,6 +364,30 @@ async def get_mcp_server(db: AsyncSession, tenant_id: UUID, server_id: UUID) -> 
         )
     )
     return result.scalar_one_or_none()
+
+
+def _get_default_mcp_servers() -> list[tuple[str, str]]:
+    """Список MCP-серверов по умолчанию из .env (default_mcp_servers — JSON-массив пар [название, url])."""
+    try:
+        raw = json.loads(app_settings.default_mcp_servers or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return []
+    result: list[tuple[str, str]] = []
+    for item in raw:
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            name = str(item[0]).strip()
+            url = str(item[1]).strip()
+            if name and url:
+                result.append((name, url))
+    return result
+
+
+async def create_default_mcp_servers_for_tenant(db: AsyncSession, tenant_id: UUID) -> None:
+    """Создать для тенанта MCP-серверы по умолчанию из .env (default_mcp_servers)."""
+    for name, base_url in _get_default_mcp_servers():
+        s = McpServer(tenant_id=tenant_id, name=name, base_url=base_url, enabled=True)
+        db.add(s)
+    await db.flush()
 
 
 async def create_mcp_server(

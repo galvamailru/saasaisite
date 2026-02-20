@@ -170,7 +170,8 @@ async def list_tenant_dialogs_endpoint(
     d_from = dt.strptime(date_from, "%Y-%m-%d").date() if date_from else None
     d_to = dt.strptime(date_to, "%Y-%m-%d").date() if date_to else None
     total, items = await list_tenant_dialogs(
-        db, tenant_id, limit=limit, offset=offset, date_from=d_from, date_to=d_to, only_new=only_new, only_leads=only_leads
+        db, tenant_id, cabinet_user_id=user_id, limit=limit, offset=offset,
+        date_from=d_from, date_to=d_to, only_new=only_new, only_leads=only_leads,
     )
     return DialogListResponse(
         total=total,
@@ -179,7 +180,7 @@ async def list_tenant_dialogs_endpoint(
                 id=d["dialog"].id,
                 created_at=d["dialog"].created_at,
                 updated_at=d["dialog"].updated_at,
-                viewed_at=d["dialog"].viewed_at,
+                viewed_at=d.get("viewed_at"),
                 preview=d["preview"],
                 user_id=d["dialog"].user_id,
                 message_count=d.get("message_count", 0),
@@ -203,11 +204,11 @@ async def get_tenant_dialog(
     messages = await get_dialog_messages_for_tenant(db, tenant_id, dialog_id)
     if messages is None:
         raise HTTPException(status_code=404, detail="dialog not found")
-    dialog = await mark_dialog_viewed(db, tenant_id, dialog_id)
+    viewed_at = await mark_dialog_viewed(db, tenant_id, cabinet_user_id=user_id, dialog_id=dialog_id)
     return DialogDetailResponse(
         id=dialog_id,
         messages=[MessageInDialog(role=m.role, content=m.content, created_at=m.created_at) for m in messages],
-        viewed_at=dialog.viewed_at if dialog else None,
+        viewed_at=viewed_at,
     )
 
 

@@ -77,7 +77,7 @@ async def save_lead_if_contact(
     dialog_id: UUID,
     user_message: str,
 ) -> bool:
-    """Если в сообщении есть контакты (email/телефон), сохраняет или обновляет лид. Один лид на (tenant_id, user_id, dialog_id)."""
+    """Лид выставляется сервером при срабатывании regex на контакты (email/телефон) в сообщении пользователя. Отдельно от атрибута «просмотрен». Один лид на (tenant_id, user_id, dialog_id)."""
     new_parts = _extract_contact_parts(user_message)
     if not new_parts:
         return False

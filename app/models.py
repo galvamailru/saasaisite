@@ -77,7 +77,6 @@ class Dialog(Base):
     user_id: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
-    viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     tenant = relationship("Tenant", back_populates="dialogs")
     messages = relationship("Message", back_populates="dialog", order_by="Message.created_at")
@@ -85,6 +84,24 @@ class Dialog(Base):
     __table_args__ = (
         Index("ix_dialog_tenant_user_updated", "tenant_id", "user_id", "updated_at"),
     )
+
+
+class DialogView(Base):
+    """Просмотры диалогов пользователем кабинета: каждый диалог, который админ открыл, помечается для этого пользователя (все такие диалоги считаются прочитанными)."""
+    __tablename__ = "dialog_view"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "cabinet_user_id", "dialog_id", name="uq_dialog_view_tenant_user_dialog"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False
+    )
+    cabinet_user_id: Mapped[str] = mapped_column(String(64), nullable=False)  # id пользователя кабинета (TenantUser.id)
+    dialog_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("dialog.id", ondelete="CASCADE"), nullable=False
+    )
+    viewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class Message(Base):
