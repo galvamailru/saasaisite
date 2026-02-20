@@ -1,5 +1,5 @@
 """Cabinet: dialogs list, dialog detail, saved items, profile."""
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import exists, func, or_, select
@@ -105,8 +105,9 @@ async def list_tenant_dialogs(
     offset: int,
     date_from: date | None = None,
     date_to: date | None = None,
+    only_new: bool = False,
 ) -> tuple[int, list]:
-    """Все диалоги тенанта. date_from/date_to — фильтр по updated_at (включительно)."""
+    """Все диалоги тенанта. date_from/date_to — фильтр по updated_at (включительно). only_new — только непросмотренные (viewed_at IS NULL)."""
     count_q = select(func.count()).select_from(Dialog).where(Dialog.tenant_id == tenant_id)
     q = select(Dialog).where(Dialog.tenant_id == tenant_id)
     if date_from is not None:
@@ -117,6 +118,9 @@ async def list_tenant_dialogs(
         dt_to = datetime.combine(date_to + timedelta(days=1), datetime.min.time())
         count_q = count_q.where(Dialog.updated_at < dt_to)
         q = q.where(Dialog.updated_at < dt_to)
+    if only_new:
+        count_q = count_q.where(Dialog.viewed_at.is_(None))
+        q = q.where(Dialog.viewed_at.is_(None))
     total = (await db.execute(count_q)).scalar() or 0
     q = q.order_by(Dialog.updated_at.desc()).limit(limit).offset(offset)
     result = await db.execute(q)
@@ -140,6 +144,24 @@ async def list_tenant_dialogs(
         has_lead = lead_exists.scalar() or False
         items.append({"dialog": d, "preview": preview, "message_count": message_count, "has_lead": has_lead})
     return total, items
+
+
+async def mark_dialog_viewed(
+    db: AsyncSession,
+    tenant_id: UUID,
+    dialog_id: UUID,
+) -> Dialog | None:
+    """Пометить диалог как просмотренный (админ открыл в кабинете). Возвращает диалог или None."""
+    result = await db.execute(
+        select(Dialog).where(
+            Dialog.id == dialog_id,
+            Dialog.tenant_id == tenant_id,
+        )
+    )
+    dialog = result.scalar_one_or_none()
+    if dialog:
+        dialog.viewed_at = datetime.now(timezone.utc)
+    return dialog
 
 
 async def get_dialog_messages(

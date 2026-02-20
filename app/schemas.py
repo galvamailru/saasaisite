@@ -82,6 +82,7 @@ class MessageInDialog(BaseModel):
 class DialogDetailResponse(BaseModel):
     id: UUID
     messages: list[MessageInDialog]
+    viewed_at: datetime | None = None
 
 
 # Cabinet: saved

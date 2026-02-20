@@ -1,6 +1,5 @@
 """Chat: POST message -> SSE stream. Системный промпт из чанков. Галерея и RAG через MCP (tools)."""
 import json
-from typing import Dict, List, Tuple
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,28 +13,12 @@ from app.services.leads import save_lead_if_contact
 from app.services.prompt_loader import get_welcome_for_tenant, load_prompt_for_tenant, load_test_prompt_for_tenant
 from app.services.cabinet_service import get_tenant_by_id
 from app.services.user_chat_mcp_service import run_user_chat_with_mcp_tools
+from app.services.test_chat_history import get_test_history, save_test_history
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["chat"])
 
 # Размер чанка при «стриме» уже обработанного ответа (для плавного отображения)
 _STREAM_CHUNK = 80
-
-# Память для тестового режима: история последних сообщений (user/assistant) в ОЗУ
-_TEST_HISTORY_LIMIT = 10
-_test_histories: Dict[Tuple[UUID, str], List[dict]] = {}
-
-
-def _get_test_history(tenant_id: UUID, user_id: str) -> List[dict]:
-    """Возвращает историю тестового диалога для (tenant_id, user_id) из памяти."""
-    return list(_test_histories.get((tenant_id, user_id)) or [])
-
-
-def _save_test_history(tenant_id: UUID, user_id: str, history: List[dict]) -> None:
-    """Сохраняет историю тестового диалога в памяти, обрезая до последних N сообщений."""
-    if not history:
-        _test_histories.pop((tenant_id, user_id), None)
-        return
-    _test_histories[(tenant_id, user_id)] = history[-_TEST_HISTORY_LIMIT:]
 
 
 async def _sse_stream(
@@ -60,7 +43,7 @@ async def _sse_stream(
         return
     if is_test:
         # Тестовый режим: история хранится только в памяти на сервере, без БД
-        previous_history = _get_test_history(tenant_id, user_id)
+        previous_history = get_test_history(tenant_id, user_id)
         history = previous_history + [{"role": "user", "content": message_text}]
         dialog = None
     else:
@@ -84,12 +67,12 @@ async def _sse_stream(
         raise
     # В тестовом режиме после получения ответа обновляем историю в памяти (user + assistant)
     if is_test:
-        prev = _get_test_history(tenant_id, user_id)
+        prev = get_test_history(tenant_id, user_id)
         new_history = prev + [
             {"role": "user", "content": message_text},
             {"role": "assistant", "content": final_text},
         ]
-        _save_test_history(tenant_id, user_id, new_history)
+        save_test_history(tenant_id, user_id, new_history)
     # Стримим клиенту уже обработанный ответ (чунками для плавного отображения)
     for i in range(0, len(final_text), _STREAM_CHUNK):
         yield f"data: {json.dumps({'content': final_text[i:i + _STREAM_CHUNK]})}\n\n"

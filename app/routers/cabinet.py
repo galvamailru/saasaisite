@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.config import settings as app_settings
 from app.services.auth_service import decode_jwt, get_tenant_user_by_id
+from app.services.test_chat_history import clear_tenant_test_history
 from app.schemas import (
     DialogDetailResponse,
     DialogListResponse,
@@ -54,6 +55,7 @@ from app.services.cabinet_service import (
     delete_mcp_server,
     list_saved,
     list_tenant_dialogs,
+    mark_dialog_viewed,
     upsert_profile,
 )
 from app.services.mcp_client import fetch_tools_from_url
@@ -158,6 +160,7 @@ async def list_tenant_dialogs_endpoint(
     offset: int = Query(0, ge=0),
     date_from: str | None = Query(None, description="YYYY-MM-DD"),
     date_to: str | None = Query(None, description="YYYY-MM-DD"),
+    only_new: bool = Query(False, description="Только непросмотренные диалоги"),
 ):
     from datetime import datetime as dt
     tenant = await get_tenant_by_id(db, tenant_id)
@@ -166,7 +169,7 @@ async def list_tenant_dialogs_endpoint(
     d_from = dt.strptime(date_from, "%Y-%m-%d").date() if date_from else None
     d_to = dt.strptime(date_to, "%Y-%m-%d").date() if date_to else None
     total, items = await list_tenant_dialogs(
-        db, tenant_id, limit=limit, offset=offset, date_from=d_from, date_to=d_to
+        db, tenant_id, limit=limit, offset=offset, date_from=d_from, date_to=d_to, only_new=only_new
     )
     return DialogListResponse(
         total=total,
@@ -175,6 +178,7 @@ async def list_tenant_dialogs_endpoint(
                 id=d["dialog"].id,
                 created_at=d["dialog"].created_at,
                 updated_at=d["dialog"].updated_at,
+                viewed_at=d["dialog"].viewed_at,
                 preview=d["preview"],
                 user_id=d["dialog"].user_id,
                 message_count=d.get("message_count", 0),
@@ -198,9 +202,11 @@ async def get_tenant_dialog(
     messages = await get_dialog_messages_for_tenant(db, tenant_id, dialog_id)
     if messages is None:
         raise HTTPException(status_code=404, detail="dialog not found")
+    dialog = await mark_dialog_viewed(db, tenant_id, dialog_id)
     return DialogDetailResponse(
         id=dialog_id,
         messages=[MessageInDialog(role=m.role, content=m.content, created_at=m.created_at) for m in messages],
+        viewed_at=dialog.viewed_at if dialog else None,
     )
 
 
@@ -439,6 +445,7 @@ async def patch_user_prompt(
         settings["test_system_prompt"] = text or None
         tenant.settings = settings
         flag_modified(tenant, "settings")
+        clear_tenant_test_history(tenant_id)
     await db.flush()
     return _build_user_prompt_response(tenant)
 

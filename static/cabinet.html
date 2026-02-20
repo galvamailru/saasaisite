@@ -138,6 +138,7 @@
     .dialog-card .dialog-meta .date { font-weight: 600; color: var(--text); }
     .dialog-card .dialog-meta .msg-count { color: var(--accent); }
     .dialog-card .dialog-meta .lead-badge { color: var(--success); font-weight: 600; }
+    .dialog-card .dialog-meta .viewed-badge { color: var(--text-muted); font-style: italic; }
     .dialog-card .dialog-meta .user-id { font-weight: normal; color: var(--text-muted); font-size: 0.8rem; }
     .leads-list .lead-item { border-radius: 6px; }
     .leads-list .lead-item .contact { font-weight: 600; font-size: 1rem; color: var(--text); }
@@ -148,6 +149,12 @@
     .admin-prompt-system.welcome-block textarea { min-height: 80px; }
     .admin-prompt-system label { display: block; font-weight: 600; margin-bottom: 0.5rem; color: var(--text); font-size: 0.9rem; }
     .admin-prompt-system textarea { min-height: 300px; }
+    .prompt-tabs { display: flex; gap: 0; margin-bottom: 0; border-bottom: 1px solid var(--border); }
+    .prompt-tabs .prompt-tab { padding: 0.5rem 1rem; font-size: 0.9rem; background: var(--surface); border: 1px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0; cursor: pointer; color: var(--text-muted, #666); }
+    .prompt-tabs .prompt-tab:hover { color: var(--text); background: rgba(88,166,255,0.06); }
+    .prompt-tabs .prompt-tab.active { background: var(--bg); color: var(--accent); font-weight: 600; margin-bottom: -1px; padding-bottom: calc(0.5rem + 1px); }
+    .prompt-tab-panel { display: none; padding: 1rem 0; border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; background: var(--bg); }
+    .prompt-tab-panel.active { display: block; }
     .admin-chunk-card { border: 1px solid var(--border); background: rgba(88,166,255,0.04); }
     .admin-chunk-card .chunk-question-input { margin-bottom: 0.5rem; }
     .admin-chunk-card textarea { min-height: 100px; }
@@ -247,6 +254,7 @@
     .limits-table .btn-edit-limits, .limits-table .btn-block, .limits-table .btn-open-tenant { padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; }
     .limits-table .btn-edit-limits:hover, .limits-table .btn-open-tenant:hover { background: rgba(88,166,255,0.1); }
     .limits-table .btn-block:hover { background: rgba(88,166,255,0.1); }
+    .limits-table .btn-block { min-width: 2rem; font-size: 1rem; line-height: 1; }
     .limits-table .btn-block.btn-blocked { background: #c00; color: #fff; border-color: #a00; }
     .limits-table .btn-block.btn-blocked:hover { background: #e00; color: #fff; }
     .users-search-row { margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
@@ -390,7 +398,7 @@
         } catch (_) { return isoStr; }
       }
 
-      async function loadDialogs(dateFromVal, dateToVal, page) {
+      async function loadDialogs(dateFromVal, dateToVal, page, onlyNew) {
         page = page || 1;
         dialogsPage = page;
         if (!requireAuth()) return;
@@ -399,6 +407,7 @@
         let url = base + '/' + tenantId + '/me/tenant/dialogs?limit=' + DIALOGS_PAGE_SIZE + '&offset=' + offset;
         if (dateFromVal) url += '&date_from=' + encodeURIComponent(dateFromVal);
         if (dateToVal) url += '&date_to=' + encodeURIComponent(dateToVal);
+        if (onlyNew) url += '&only_new=true';
         const r = await fetch(url, { headers: headers() });
         if (!r.ok) {
           document.getElementById('content').innerHTML = '<p class="error">Ошибка загрузки диалогов. Войдите в кабинет.</p>';
@@ -412,6 +421,7 @@
         html += '<div class="date-filter">';
         html += '<label>С: <input type="date" id="dialogsDateFrom" value="' + escapeHtml(dateFromVal || '') + '"></label>';
         html += '<label>По: <input type="date" id="dialogsDateTo" value="' + escapeHtml(dateToVal || '') + '"></label>';
+        html += '<label class="checkbox-label"><input type="checkbox" id="dialogsOnlyNew" ' + (onlyNew ? 'checked' : '') + '> Только новые</label>';
         html += '<button type="button" id="dialogsFilterBtn">Применить</button>';
         html += '<button type="button" class="reset-btn" id="dialogsFilterReset">Сбросить</button>';
         html += '<span class="hint" style="margin-left:0.5rem;">Всего: ' + total + '</span>';
@@ -431,6 +441,7 @@
             html += '<span class="date">' + formatDate(d.updated_at) + '</span>';
             html += '<span class="msg-count">' + (d.message_count || 0) + ' сообщ.</span>';
             if (d.has_lead) html += '<span class="lead-badge">✓ Лид</span>';
+            if (d.viewed_at) html += '<span class="viewed-badge">Просмотрено ' + formatDate(d.viewed_at) + '</span>';
             var uid = (d.user_id || '').toString();
             var uidShort = uid.length > 20 ? uid.slice(0, 18) + '…' : uid;
             html += '<span class="user-id" title="' + escapeHtml(uid) + '">Посетитель: ' + escapeHtml(uidShort || '—') + '</span>';
@@ -451,13 +462,16 @@
         if (filterBtn) filterBtn.addEventListener('click', function() {
           var from = document.getElementById('dialogsDateFrom').value;
           var to = document.getElementById('dialogsDateTo').value;
-          loadDialogs(from || undefined, to || undefined, 1);
+          var onlyNew = document.getElementById('dialogsOnlyNew') && document.getElementById('dialogsOnlyNew').checked;
+          loadDialogs(from || undefined, to || undefined, 1, onlyNew);
         });
         var resetBtn = document.getElementById('dialogsFilterReset');
         if (resetBtn) resetBtn.addEventListener('click', function() {
           document.getElementById('dialogsDateFrom').value = '';
           document.getElementById('dialogsDateTo').value = '';
-          loadDialogs(undefined, undefined, 1);
+          var onlyNewEl = document.getElementById('dialogsOnlyNew');
+          if (onlyNewEl) onlyNewEl.checked = false;
+          loadDialogs(undefined, undefined, 1, false);
         });
         var prevBtn = document.getElementById('dialogsPrev');
         var nextBtn = document.getElementById('dialogsNext');
@@ -467,7 +481,8 @@
             if (dialogsPage > 1) {
               var from = document.getElementById('dialogsDateFrom').value;
               var to = document.getElementById('dialogsDateTo').value;
-              loadDialogs(from || undefined, to || undefined, dialogsPage - 1);
+              var onlyNew = document.getElementById('dialogsOnlyNew') && document.getElementById('dialogsOnlyNew').checked;
+              loadDialogs(from || undefined, to || undefined, dialogsPage - 1, onlyNew);
             }
           });
         }
@@ -477,7 +492,8 @@
             if (dialogsPage < totalPages) {
               var from = document.getElementById('dialogsDateFrom').value;
               var to = document.getElementById('dialogsDateTo').value;
-              loadDialogs(from || undefined, to || undefined, dialogsPage + 1);
+              var onlyNew = document.getElementById('dialogsOnlyNew') && document.getElementById('dialogsOnlyNew').checked;
+              loadDialogs(from || undefined, to || undefined, dialogsPage + 1, onlyNew);
             }
           });
         }
@@ -496,7 +512,8 @@
         for (const m of (d.messages || [])) {
           var content = m.content || '';
           var displayContent = (m.role === 'assistant') ? content : (content.length > 500 ? content.slice(0, 500) + '…' : content);
-          html += '<li class="chat-msg ' + escapeHtml((m.role || '')) + '"><strong>' + escapeHtml(m.role === 'assistant' ? 'Бот' : (m.role || 'user')) + ':</strong> ' + escapeHtml(displayContent) + '</li>';
+          var bodyHtml = processHtmlBlocksAndText(displayContent) || '—';
+          html += '<li class="chat-msg ' + escapeHtml((m.role || '')) + '"><strong>' + escapeHtml(m.role === 'assistant' ? 'Бот' : (m.role || 'user')) + ':</strong> <span class="dialog-msg-body">' + bodyHtml + '</span></li>';
         }
         html += '</ul>';
         document.getElementById('content').innerHTML = html;
@@ -531,15 +548,17 @@
         html += '<div style="margin-top:0.5rem;"><button type="button" id="saveWelcomeMessage">Сохранить приветствие</button></div>';
         html += '</div>';
         html += '<p class="hint">Отдельные промпты для тестового чата (в кабинете) и боевого бота (iframe на сайте).</p>';
-        html += '<div class="admin-prompt-system">';
-        html += '<label>Тестовый промпт (чат в кабинете)</label>';
+        html += '<div class="prompt-tabs" role="tablist">';
+        html += '<button type="button" class="prompt-tab active" role="tab" aria-selected="true" data-tab="test">Тестовый</button>';
+        html += '<button type="button" class="prompt-tab" role="tab" aria-selected="false" data-tab="prod">Боевой</button>';
+        html += '</div>';
+        html += '<div id="promptTabTest" class="prompt-tab-panel active" role="tabpanel">';
+        html += '<div class="admin-prompt-system"><label>Тестовый промпт (чат в кабинете)</label>';
         html += '<textarea id="userTestPrompt" placeholder="Опишите роль агента, бизнес-цель и ключевые правила для тестового чата..."></textarea>';
         html += '<div style="margin-top:0.5rem;"><button type="button" id="saveTestPrompt">Сохранить тестовый промпт</button> ';
-        html += '<button type="button" id="restoreUserPromptDefault">Загрузить из файла по умолчанию</button></div>';
-        html += '</div>';
-
-        html += '<div class="admin-prompt-system">';
-        html += '<label>Боевой промпт (бот в iframe на сайте)</label>';
+        html += '<button type="button" id="restoreUserPromptDefault">Загрузить из файла по умолчанию</button></div></div></div>';
+        html += '<div id="promptTabProd" class="prompt-tab-panel" role="tabpanel">';
+        html += '<div class="admin-prompt-system"><label>Боевой промпт (бот в iframe на сайте)</label>';
         html += '<textarea id="userProdPrompt" placeholder="Промпт боевого чат-бота для клиентов..."></textarea>';
         html += '<div style="margin-top:0.5rem;"><button type="button" id="saveProdPrompt">Сохранить боевой промпт</button> ';
         html += '<button type="button" id="copyTestToProd">Скопировать тестовый → боевой (с бэкапом)</button> ';
@@ -547,7 +566,7 @@
         if (prevProdPromptVal) {
           html += '<p class="hint" style="margin-top:0.5rem;">Есть сохранённая предыдущая версия боевого промпта. Кнопка отката поменяет местами текущий и предыдущий варианты.</p>';
         }
-        html += '</div>';
+        html += '</div></div></div>';
 
         document.getElementById('content').innerHTML = html;
 
@@ -559,6 +578,17 @@
           if (testEl) testEl.value = testPromptVal || '';
           if (prodEl) prodEl.value = prodPromptVal || '';
         })();
+
+        document.querySelectorAll('.prompt-tab').forEach(function(tab) {
+          tab.addEventListener('click', function() {
+            var tabId = this.getAttribute('data-tab');
+            document.querySelectorAll('.prompt-tab').forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+            this.classList.add('active'); this.setAttribute('aria-selected', 'true');
+            document.querySelectorAll('.prompt-tab-panel').forEach(function(p) { p.classList.remove('active'); });
+            var panel = document.getElementById('promptTab' + (tabId === 'test' ? 'Test' : 'Prod'));
+            if (panel) panel.classList.add('active');
+          });
+        });
 
         document.getElementById('saveWelcomeMessage').addEventListener('click', async () => {
           const text = document.getElementById('userWelcomeMessage').value;
@@ -850,6 +880,61 @@
         const div = document.createElement('div');
         div.textContent = s;
         return div.innerHTML;
+      }
+
+      var ALLOWED_HTML_TAGS = /^(p|div|span|br|strong|b|em|i|u|ul|ol|li|a|img|table|thead|tbody|tr|td|th|h1|h2|h3|h4)$/i;
+      var HTML_BLOCK_RE = /\[HTML\]([\s\S]*?)\[\/HTML\]/gi;
+      var ALLOWED_STYLE_PROPS = /^(color|background-color|background|font-weight|font-style|font-size|text-align|margin|margin-top|margin-bottom|margin-left|margin-right|padding|padding-top|padding-bottom|padding-left|padding-right|display|width|height|max-width|border|border-radius|list-style-type|text-decoration|line-height)$/i;
+      var DANGEROUS_STYLE = /expression\s*\(|javascript\s*:|url\s*\(\s*["']?\s*javascript|behavior\s*:|@import|-moz-binding/i;
+      function sanitizeStyleValue(value) {
+        if (!value || typeof value !== 'string') return '';
+        var out = [], parts = value.split(';');
+        for (var i = 0; i < parts.length; i++) {
+          var part = parts[i].trim(), colon = part.indexOf(':');
+          if (colon <= 0) continue;
+          var prop = part.slice(0, colon).trim().toLowerCase(), val = part.slice(colon + 1).trim();
+          if (DANGEROUS_STYLE.test(val)) continue;
+          if (ALLOWED_STYLE_PROPS.test(prop)) out.push(prop + ':' + val);
+        }
+        return out.join('; ');
+      }
+      function sanitizeHtmlForChat(raw) {
+        if (!raw || typeof raw !== 'string') return '';
+        var tmp = document.createElement('div');
+        tmp.innerHTML = raw.trim();
+        [].slice.call(tmp.querySelectorAll('script, iframe, form, object, embed, style')).forEach(function(el) { el.remove(); });
+        tmp.querySelectorAll('*').forEach(function(el) {
+          if (!ALLOWED_HTML_TAGS.test(el.tagName)) { el.replaceWith(document.createTextNode(el.textContent)); return; }
+          for (var i = el.attributes.length - 1; i >= 0; i--) {
+            var a = el.attributes[i];
+            if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+            else if (el.tagName === 'A' && (a.name === 'href' || a.name === 'target' || a.name === 'rel')) { }
+            else if (el.tagName === 'IMG' && (a.name === 'src' || a.name === 'alt' || a.name === 'loading')) { }
+            else if (a.name === 'style') { var safe = sanitizeStyleValue(a.value); if (safe) el.setAttribute('style', safe); else el.removeAttribute('style'); }
+            else if (a.name !== 'href' && a.name !== 'src' && a.name !== 'alt' && a.name !== 'target' && a.name !== 'rel' && a.name !== 'loading') el.removeAttribute(a.name);
+          }
+          if (el.tagName === 'A') { el.setAttribute('target', '_blank'); el.setAttribute('rel', 'noopener noreferrer'); }
+        });
+        return tmp.innerHTML;
+      }
+      function processHtmlBlocksAndText(text) {
+        if (text == null || text === '') return '';
+        var parts = [], lastIndex = 0;
+        HTML_BLOCK_RE.lastIndex = 0;
+        var m;
+        while ((m = HTML_BLOCK_RE.exec(text)) !== null) {
+          if (m.index > lastIndex) {
+            var textSegment = text.slice(lastIndex, m.index);
+            parts.push(textSegment.split('\n').map(function(l) { return escapeHtml((l || '').trim()); }).join('<br>'));
+          }
+          parts.push(sanitizeHtmlForChat(m[1]));
+          lastIndex = HTML_BLOCK_RE.lastIndex;
+        }
+        if (lastIndex < text.length) {
+          var rest = text.slice(lastIndex);
+          parts.push(rest.split('\n').map(function(l) { return escapeHtml((l || '').trim()); }).join('<br>'));
+        }
+        return parts.join('');
       }
 
       var ALLOWED_HTML_TAGS = /^(p|div|span|br|strong|b|em|i|u|ul|ol|li|a|img|table|thead|tbody|tr|td|th|h1|h2|h3|h4)$/i;
@@ -1546,7 +1631,7 @@
           html += '<td>' + escapeHtml(String(t.gallery_max_images_per_group ?? 3)) + '</td>';
           html += '<td class="actions-cell"><div class="actions-btns">';
           html += '<button type="button" class="btn-open-tenant" title="Перейти в тенант" data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '">&#8594;</button>';
-          html += '<button type="button" class="btn-block' + (blocked ? ' btn-blocked' : '') + '" title="' + (blocked ? 'Разблокировать' : 'Заблокировать') + '" data-blocked="' + (blocked ? '1' : '0') + '">' + (blocked ? 'Разблок' : 'Блок') + '</button>';
+          html += '<button type="button" class="btn-block' + (blocked ? ' btn-blocked' : '') + '" title="' + (blocked ? 'Разблокировать' : 'Заблокировать') + '" aria-label="' + (blocked ? 'Разблокировать' : 'Заблокировать') + '" data-blocked="' + (blocked ? '1' : '0') + '">' + (blocked ? '\uD83D\uDD13' : '\uD83D\uDD12') + '</button>';
           html += '<button type="button" class="btn-edit-limits" title="Изменить ограничения">&#9998;</button></div></td></tr>';
         }
         html += '</tbody></table></div>';
