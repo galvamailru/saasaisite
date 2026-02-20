@@ -2,7 +2,7 @@
 from datetime import date, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Dialog, Lead, McpServer, Message, SavedItem, UserProfile
@@ -42,12 +42,20 @@ async def list_all_tenants(
     db: AsyncSession,
     limit: int = 50,
     offset: int = 0,
+    search: str | None = None,
 ) -> tuple[int, list]:
-    """Список тенантов с пагинацией (для страницы администратора «Пользователи»). Возвращает (total, list)."""
+    """Список тенантов с пагинацией и поиском по slug/названию (для страницы «Пользователи»). Возвращает (total, list)."""
     from app.models import Tenant
-    count_q = select(func.count()).select_from(Tenant)
+    condition = True
+    if search and search.strip():
+        term = "%" + search.strip() + "%"
+        condition = or_(
+            Tenant.slug.ilike(term),
+            Tenant.name.ilike(term),
+        )
+    count_q = select(func.count()).select_from(Tenant).where(condition)
     total = (await db.execute(count_q)).scalar() or 0
-    q = select(Tenant).order_by(Tenant.slug).limit(limit).offset(offset)
+    q = select(Tenant).where(condition).order_by(Tenant.slug).limit(limit).offset(offset)
     result = await db.execute(q)
     return total, list(result.scalars().all())
 

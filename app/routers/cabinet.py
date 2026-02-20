@@ -1158,12 +1158,13 @@ async def admin_list_tenants_with_limits(
     user_id: str = Depends(get_cabinet_user),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    search: str | None = Query(None, description="Поиск по slug или названию тенанта"),
 ):
     tenant = await get_tenant_by_id(db, tenant_id)
     if not tenant:
         raise HTTPException(status_code=404, detail="tenant not found")
     _require_admin_tenant(tenant.slug)
-    total, tenants = await list_all_tenants(db, limit=limit, offset=offset)
+    total, tenants = await list_all_tenants(db, limit=limit, offset=offset, search=search)
     out = []
     for t in tenants:
         settings = t.settings or {}

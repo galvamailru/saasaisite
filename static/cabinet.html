@@ -237,8 +237,16 @@
     .limits-table th, .limits-table td { padding: 0.5rem 0.75rem; text-align: left; border: 1px solid var(--border); }
     .limits-table th { background: var(--surface); font-weight: 600; }
     .limits-table tr:hover { background: rgba(88,166,255,0.04); }
-    .limits-table .btn-edit-limits, .limits-table .btn-block, .limits-table .btn-open-tenant { padding: 0.35rem 0.7rem; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; margin-right: 0.35rem; }
-    .limits-table .btn-edit-limits:hover, .limits-table .btn-block:hover, .limits-table .btn-open-tenant:hover { background: rgba(88,166,255,0.1); }
+    .limits-table td.actions-cell { white-space: nowrap; padding: 0.35rem 0.5rem; vertical-align: middle; }
+    .limits-table .actions-btns { display: inline-flex; flex-wrap: nowrap; gap: 0.25rem; align-items: center; }
+    .limits-table .btn-edit-limits, .limits-table .btn-block, .limits-table .btn-open-tenant { padding: 0.25rem 0.5rem; font-size: 0.75rem; border-radius: 4px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; }
+    .limits-table .btn-edit-limits:hover, .limits-table .btn-open-tenant:hover { background: rgba(88,166,255,0.1); }
+    .limits-table .btn-block:hover { background: rgba(88,166,255,0.1); }
+    .limits-table .btn-block.blocked { background: #c00; color: #fff; border-color: #a00; }
+    .limits-table .btn-block.blocked:hover { background: #e00; color: #fff; }
+    .users-search-row { margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .users-search-row label { margin: 0; }
+    .users-search-row #usersSearchBtn { padding: 0.35rem 0.6rem; font-size: 0.85rem; }
     .limits-edit-panel { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); display: none; }
     .limits-edit-panel.visible { display: block; }
   </style>
@@ -1462,13 +1470,17 @@
       var usersPageSize = 20;
       var usersPage = 0;
       var usersTotal = 0;
+      var usersSearch = '';
 
-      async function loadUsers(page) {
+      async function loadUsers(page, searchChange) {
         if (page !== undefined) usersPage = page;
+        if (searchChange === true) usersPage = 0;
         if (!requireAuth()) return;
         await ensureTenant();
         var offset = usersPage * usersPageSize;
-        const rAdmin = await fetch(base + '/' + tenantId + '/me/admin/tenants?limit=' + usersPageSize + '&offset=' + offset, { headers: headers() });
+        var url = base + '/' + tenantId + '/me/admin/tenants?limit=' + usersPageSize + '&offset=' + offset;
+        if (usersSearch) url += '&search=' + encodeURIComponent(usersSearch);
+        const rAdmin = await fetch(url, { headers: headers() });
         if (rAdmin.status === 403) {
           const data = await rAdmin.json().catch(() => ({}));
           document.getElementById('content').innerHTML =
@@ -1487,7 +1499,10 @@
         usersTotal = data.total || 0;
         let html = '<h2>Пользователи</h2>';
         html += '<p class="hint">Тенанты и их ограничения. Выберите тенант и нажмите «Изменить», чтобы изменить ограничения. Заблокированный тенант не может войти в кабинет.</p>';
-        html += '<div class="panel"><table class="limits-table"><thead><tr>';
+        html += '<div class="panel"><div class="users-search-row"><label for="usersSearchInput">Поиск по тенанту:</label> ';
+        html += '<input type="text" id="usersSearchInput" placeholder="slug или название..." value="' + escapeHtml(usersSearch) + '" style="max-width:220px; padding:0.35rem 0.5rem;"> ';
+        html += '<button type="button" id="usersSearchBtn">Найти</button></div>';
+        html += '<table class="limits-table"><thead><tr>';
         html += '<th>Тенант (slug)</th><th>Название</th><th>Блок</th>';
         html += '<th>Симв. чата</th><th>Промпт</th><th>RAG док.</th><th>Галерей</th><th>Фото в галерее</th>';
         html += '<th>Действие</th></tr></thead><tbody>';
@@ -1502,9 +1517,10 @@
           html += '<td>' + escapeHtml(String(t.rag_max_documents ?? 3)) + '</td>';
           html += '<td>' + escapeHtml(String(t.gallery_max_groups ?? 3)) + '</td>';
           html += '<td>' + escapeHtml(String(t.gallery_max_images_per_group ?? 3)) + '</td>';
-          html += '<td><button type="button" class="btn-open-tenant" data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '">Перейти в тенант</button> ';
-          html += '<button type="button" class="btn-block" data-blocked="' + (blocked ? '1' : '0') + '">' + (blocked ? 'Разблокировать' : 'Заблокировать') + '</button> ';
-          html += '<button type="button" class="btn-edit-limits">Изменить</button></td></tr>';
+          html += '<td class="actions-cell"><div class="actions-btns">';
+          html += '<button type="button" class="btn-open-tenant" data-tenant-id="' + escapeHtml(t.id) + '" data-tenant-slug="' + escapeHtml(t.slug || '') + '">Перейти</button>';
+          html += '<button type="button" class="btn-block' + (blocked ? ' blocked' : '') + '" data-blocked="' + (blocked ? '1' : '0') + '">' + (blocked ? 'Разблокировать' : 'Заблокировать') + '</button>';
+          html += '<button type="button" class="btn-edit-limits">Изменить</button></div></td></tr>';
         }
         html += '</tbody></table>';
         var from = offset + 1;
@@ -1533,6 +1549,10 @@
 
         document.getElementById('usersPrev') && document.getElementById('usersPrev').addEventListener('click', function() { loadUsers(usersPage - 1); });
         document.getElementById('usersNext') && document.getElementById('usersNext').addEventListener('click', function() { loadUsers(usersPage + 1); });
+        var searchInput = document.getElementById('usersSearchInput');
+        var searchBtn = document.getElementById('usersSearchBtn');
+        if (searchInput) searchInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') { usersSearch = searchInput.value.trim(); loadUsers(0, true); } });
+        if (searchBtn) searchBtn.addEventListener('click', function() { usersSearch = (searchInput && searchInput.value.trim()) || ''; loadUsers(0, true); });
 
         document.querySelectorAll('.limits-table .btn-open-tenant').forEach(function(btn) {
           btn.addEventListener('click', async function() {
