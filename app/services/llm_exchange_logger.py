@@ -1,5 +1,6 @@
 """Единое логирование обменов с DeepSeek: запрос и ответ по типам чата в раздельные директории.
-Логирование выполняется только если пользователь — администратор (is_admin=True)."""
+Вызов append_exchange делается вызывающим кодом: боевой чат (prodchat — iframe/Telegram) логируется всегда,
+тестовый (testchat) и админ-чат (adminchat) — только для администратора."""
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -38,11 +39,9 @@ def append_exchange(
 ) -> None:
     """
     Пишет в лог один обмен с DeepSeek (запрос и ответ).
-    Запись выполняется только если is_admin=True.
+    Вызывающий код решает, когда вызывать (prodchat — всегда, testchat/adminchat — при is_admin).
     chat_type: "testchat" | "prodchat" | "adminchat" — поддиректория в logs/.
     """
-    if not is_admin:
-        return
     if chat_type not in CHAT_TYPE_DIRS:
         chat_type = "prodchat"
     path = _session_log_path(tenant_id, session_id, chat_type)

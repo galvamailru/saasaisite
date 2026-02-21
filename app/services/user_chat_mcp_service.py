@@ -133,7 +133,8 @@ async def run_user_chat_with_mcp_tools(
     Запускает диалог с моделью, передаёт tools только из MCP-серверов, добавленных в БД.
     При tool_calls выполняет вызовы через MCP и повторяет запрос (до 3 раундов).
     Возвращает финальный текст ответа (без tool_calls).
-    Логирование в testchat/prodchat только при is_admin; при from_telegram в промпт добавляется контекст про Telegram.
+    Логирование: боевой чат (prodchat — iframe/Telegram) всегда; тестовый (testchat) только при is_admin.
+    При from_telegram в промпт добавляется контекст про Telegram.
     """
     tools = await _get_all_tools_for_llm(tenant_id, db)
     prompt_with_context = (system_prompt or "").strip() + _CONTEXT_TENANT_BLOCK
@@ -141,13 +142,15 @@ async def run_user_chat_with_mcp_tools(
         prompt_with_context += _TELEGRAM_CONTEXT
     chat_type = "testchat" if is_test else "prodchat"
     log_session_id = session_id or "user"
+    # Боевой чат (iframe, Telegram) логируем всегда; тестовый — только для админа
+    should_log = (chat_type == "prodchat") or is_admin
 
     if not tools:
         from app.llm_client import chat_once
         current_messages = list(messages)[-CONTEXT_MESSAGE_LIMIT:]
         request_text = _build_request_to_llm_text(prompt_with_context, current_messages)
         result = await chat_once(prompt_with_context, current_messages)
-        if is_admin:
+        if should_log:
             append_exchange(
                 chat_type,
                 tenant_id,
@@ -155,7 +158,7 @@ async def run_user_chat_with_mcp_tools(
                 request_text,
                 result or "",
                 is_new_session=True,
-                is_admin=True,
+                is_admin=is_admin,
             )
         return result or ""
 
@@ -172,7 +175,7 @@ async def run_user_chat_with_mcp_tools(
             response_for_log += "\n[tool_calls]\n" + "\n".join(
                 f"  {tc.get('name', '')}(...)" for tc in tool_calls
             )
-        if is_admin:
+        if should_log:
             append_exchange(
                 chat_type,
                 tenant_id,
@@ -180,7 +183,7 @@ async def run_user_chat_with_mcp_tools(
                 request_text,
                 response_for_log,
                 is_new_session=(round_index == 0),
-                is_admin=True,
+                is_admin=is_admin,
             )
         round_index += 1
 

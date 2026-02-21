@@ -6,6 +6,7 @@ import re
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.llm_client import chat_once
 from app.services.prompt_loader import load_admin_prompt, load_test_prompt_for_tenant
@@ -108,7 +109,8 @@ def _strip_save_prompt_blocks(reply: str) -> str:
 
 async def _apply_save_prompt_blocks(db: AsyncSession, tenant_id: UUID, reply: str) -> tuple[str, bool]:
     """
-    Ищет в reply блоки [SAVE_PROMPT]...[/SAVE_PROMPT], сохраняет содержимое в tenant.system_prompt.
+    Ищет в reply блоки [SAVE_PROMPT]...[/SAVE_PROMPT], сохраняет содержимое в боевой промпт
+    (tenant.system_prompt — используется в iframe/Telegram), с сохранением предыдущей версии для отката.
     Возвращает (reply без блоков, был ли хотя бы один сохранён).
     """
     saved = False
@@ -118,7 +120,14 @@ async def _apply_save_prompt_blocks(db: AsyncSession, tenant_id: UUID, reply: st
             continue
         tenant = await get_tenant_by_id(db, tenant_id)
         if tenant is not None:
-            tenant.system_prompt = content
+            # Боевой промпт — tenant.system_prompt (не тестовый settings['test_system_prompt'])
+            prev = (getattr(tenant, "system_prompt", None) or "").strip() or None
+            if prev and prev != content:
+                settings = dict(tenant.settings or {})
+                settings["prod_system_prompt_prev"] = prev
+                tenant.settings = settings
+                flag_modified(tenant, "settings")
+            tenant.system_prompt = content or None
             await db.flush()
             saved = True
     cleaned = _strip_save_prompt_blocks(reply)
