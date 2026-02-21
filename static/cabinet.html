@@ -1652,7 +1652,8 @@
               var uid = localStorage.getItem('cip_user_id');
               var token = localStorage.getItem('cip_access_token');
               if (uid && token) {
-                frame.contentWindow.postMessage({ type: 'cip_auth', user_id: uid, token: token, is_test: true }, window.location.origin);
+                // Боевой чат (как на сайте клиента) — не передаём is_test, чтобы использовался боевой промпт
+                frame.contentWindow.postMessage({ type: 'cip_auth', user_id: uid, token: token, is_test: false }, window.location.origin);
               }
             } catch (_) {}
           });
