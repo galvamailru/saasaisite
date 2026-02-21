@@ -51,24 +51,25 @@ _CONTEXT_TENANT_BLOCK = """
 # Контекст для запросов из Telegram-бота (добавляется в системный промпт)
 _TELEGRAM_CONTEXT = "\n\nОбрати внимание! Этот запрос от телеграм бота."
 
-# Чтобы в контексте модели не копировались старые ответы с [HTML]...[/HTML] (иначе модель повторяет формат)
 _FORMAT_RULE = "\n\nФормат ответов: используй только Markdown (заголовки, списки, **жирный**, *курсив*, ссылки). Не используй блоки [HTML]...[/HTML]."
 
-# Регулярка для вырезания блоков [HTML]...[/HTML] из истории перед отправкой в модель
+# Сообщение, которым заменяются блоки [HTML]...[/HTML] в истории: в модель они не отправляются, в логах видно, что было скрыто
+_SANITIZED_BLOCK_PLACEHOLDER = "[[блок [HTML] в истории — в модель не передан]]"
+
 _HTML_BLOCK_RE = re.compile(r"\[HTML\].*?\[/HTML\]", re.DOTALL | re.IGNORECASE)
 
 
 def _strip_html_blocks_from_text(text: str) -> str:
-    """Убирает блоки [HTML]...[/HTML] из текста (чтобы не подавать их в контекст модели)."""
+    """Заменяет блоки [HTML]...[/HTML] на служебное сообщение; содержимое в модель не отправляется."""
     if not text or not isinstance(text, str):
         return text
-    return _HTML_BLOCK_RE.sub("[форматированный блок]", text).strip()
+    return _HTML_BLOCK_RE.sub(_SANITIZED_BLOCK_PLACEHOLDER, text).strip()
 
 
 def _sanitize_messages_for_llm(messages: list[dict]) -> list[dict]:
     """
-    Убирает из сообщений ассистента блоки [HTML]...[/HTML], чтобы предыдущий контекст
-    не подсказывал модели этот формат (если в промпте требуется только Markdown).
+    Удаляет из сообщений ассистента блоки [HTML]...[/HTML] перед отправкой в модель:
+    они заменяются на служебное сообщение, в модель не передаются.
     """
     out = []
     for m in messages:
@@ -202,7 +203,7 @@ async def run_user_chat_with_mcp_tools(
             )
         return result or ""
 
-    # Контекстное окно: только последние N сообщений; из истории убираем [HTML]-блоки, чтобы не подсказывать модели этот формат
+    # Контекстное окно: только последние N сообщений; блоки [HTML] в истории санитизируются — в модель не передаются
     current_messages = list(messages)[-CONTEXT_MESSAGE_LIMIT:]
     round_index = 0
     for _ in range(MAX_TOOL_ROUNDS):
