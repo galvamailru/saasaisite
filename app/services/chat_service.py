@@ -78,3 +78,11 @@ async def get_dialog_messages_for_llm(
     )
     rows = result.all()
     return [{"role": r.role, "content": r.content} for r in rows]
+
+
+async def clear_tenant_prod_history(db: AsyncSession, tenant_id: UUID) -> None:
+    """Удалить всю историю боевых диалогов тенанта (сообщения, просмотры, диалоги). Вызывать после сохранения боевого промпта."""
+    await db.execute(delete(Message).where(Message.tenant_id == tenant_id))
+    await db.execute(delete(DialogView).where(DialogView.tenant_id == tenant_id))
+    await db.execute(delete(Dialog).where(Dialog.tenant_id == tenant_id))
+    await db.flush()

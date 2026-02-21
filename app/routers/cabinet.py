@@ -11,6 +11,7 @@ from app.database import get_db
 from app.config import settings as app_settings
 from app.services.auth_service import decode_jwt, get_tenant_user_by_id, get_tenant_user_by_primary_key
 from app.services.test_chat_history import clear_tenant_test_history
+from app.services.chat_service import clear_tenant_prod_history
 from app.schemas import (
     DialogDetailResponse,
     DialogListResponse,
@@ -630,6 +631,7 @@ async def patch_user_prompt_prod(
         tenant.system_prompt = text or None
         tenant.settings = settings
         flag_modified(tenant, "settings")
+        await clear_tenant_prod_history(db, tenant_id)
     await db.flush()
     return _build_user_prompt_response(tenant)
 
@@ -653,6 +655,7 @@ async def copy_test_prompt_to_prod(
     tenant.system_prompt = test
     tenant.settings = settings
     flag_modified(tenant, "settings")
+    await clear_tenant_prod_history(db, tenant_id)
     await db.flush()
     return _build_user_prompt_response(tenant)
 
@@ -676,6 +679,7 @@ async def rollback_prod_prompt(
     settings["prod_system_prompt_prev"] = current
     tenant.settings = settings
     flag_modified(tenant, "settings")
+    await clear_tenant_prod_history(db, tenant_id)
     await db.flush()
     return _build_user_prompt_response(tenant)
 
