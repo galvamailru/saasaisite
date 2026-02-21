@@ -51,10 +51,43 @@ _CONTEXT_TENANT_BLOCK = """
 # Контекст для запросов из Telegram-бота (добавляется в системный промпт)
 _TELEGRAM_CONTEXT = "\n\nОбрати внимание! Этот запрос от телеграм бота."
 
+# Чтобы в контексте модели не копировались старые ответы с [HTML]...[/HTML] (иначе модель повторяет формат)
+_FORMAT_RULE = "\n\nФормат ответов: используй только Markdown (заголовки, списки, **жирный**, *курсив*, ссылки). Не используй блоки [HTML]...[/HTML]."
+
+# Регулярка для вырезания блоков [HTML]...[/HTML] из истории перед отправкой в модель
+_HTML_BLOCK_RE = re.compile(r"\[HTML\].*?\[/HTML\]", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_html_blocks_from_text(text: str) -> str:
+    """Убирает блоки [HTML]...[/HTML] из текста (чтобы не подавать их в контекст модели)."""
+    if not text or not isinstance(text, str):
+        return text
+    return _HTML_BLOCK_RE.sub("[форматированный блок]", text).strip()
+
+
+def _sanitize_messages_for_llm(messages: list[dict]) -> list[dict]:
+    """
+    Убирает из сообщений ассистента блоки [HTML]...[/HTML], чтобы предыдущий контекст
+    не подсказывал модели этот формат (если в промпте требуется только Markdown).
+    """
+    out = []
+    for m in messages:
+        msg = dict(m)
+        if (msg.get("role") or "").strip().lower() == "assistant":
+            content = msg.get("content")
+            if isinstance(content, str) and "[HTML]" in content.upper():
+                msg["content"] = _strip_html_blocks_from_text(content)
+        out.append(msg)
+    return out
+
 
 def _build_request_to_llm_text(prompt: str, messages: list[dict]) -> str:
-    """Собирает текст запроса к LLM для логирования."""
-    parts = [f"[system]\n{prompt}\n\n[messages]\n"]
+    """Собирает текст запроса к LLM для логирования (в логах видно системный промпт и историю диалога)."""
+    parts = [
+        "[system]\n",
+        prompt,
+        "\n\n=== ИСТОРИЯ ДИАЛОГА (отправляется в модель) ===\n[messages]\n",
+    ]
     for m in messages:
         role = m.get("role", "")
         content = m.get("content") or ""
@@ -137,7 +170,7 @@ async def run_user_chat_with_mcp_tools(
     При from_telegram в промпт добавляется контекст про Telegram.
     """
     tools = await _get_all_tools_for_llm(tenant_id, db)
-    prompt_with_context = (system_prompt or "").strip() + _CONTEXT_TENANT_BLOCK
+    prompt_with_context = (system_prompt or "").strip() + _CONTEXT_TENANT_BLOCK + _FORMAT_RULE
     if from_telegram:
         prompt_with_context += _TELEGRAM_CONTEXT
     # Разделение логов: iframe → prodchat, Telegram → telegramchat, тест в кабинете → testchat
@@ -154,8 +187,9 @@ async def run_user_chat_with_mcp_tools(
     if not tools:
         from app.llm_client import chat_once
         current_messages = list(messages)[-CONTEXT_MESSAGE_LIMIT:]
-        request_text = _build_request_to_llm_text(prompt_with_context, current_messages)
-        result = await chat_once(prompt_with_context, current_messages)
+        messages_for_llm = _sanitize_messages_for_llm(current_messages)
+        request_text = _build_request_to_llm_text(prompt_with_context, messages_for_llm)
+        result = await chat_once(prompt_with_context, messages_for_llm)
         if should_log:
             append_exchange(
                 chat_type,
@@ -168,12 +202,13 @@ async def run_user_chat_with_mcp_tools(
             )
         return result or ""
 
-    # Контекстное окно: только последние N сообщений
+    # Контекстное окно: только последние N сообщений; из истории убираем [HTML]-блоки, чтобы не подсказывать модели этот формат
     current_messages = list(messages)[-CONTEXT_MESSAGE_LIMIT:]
     round_index = 0
     for _ in range(MAX_TOOL_ROUNDS):
-        request_text = _build_request_to_llm_text(prompt_with_context, current_messages)
-        out = await chat_once_with_tools(prompt_with_context, current_messages, tools)
+        messages_for_llm = _sanitize_messages_for_llm(current_messages)
+        request_text = _build_request_to_llm_text(prompt_with_context, messages_for_llm)
+        out = await chat_once_with_tools(prompt_with_context, messages_for_llm, tools)
         content = out.get("content") or ""
         tool_calls = out.get("tool_calls")
         response_for_log = content
