@@ -250,6 +250,7 @@ async def _telegram_webhook_handle(tenant_id: UUID, request: Request, db: AsyncS
         return
     user_id = f"tg_{from_id}"
     reply_text = ""
+    placeholder_message_id = None  # сообщение «Запрос получен...» — удалим после ответа
     if not text:
         reply_text = "Отправьте текстовое сообщение."
     else:
@@ -258,6 +259,22 @@ async def _telegram_webhook_handle(tenant_id: UUID, request: Request, db: AsyncS
         if len(text) > limits["chat_max_user_message_chars"]:
             reply_text = f"Сообщение слишком длинное. Максимум {limits['chat_max_user_message_chars']} символов."
         else:
+            # Сразу отправляем подтверждение; после ответа удалим его
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    r_place = await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={
+                            "chat_id": chat_id,
+                            "text": "Запрос получен, скоро Вам ответят.",
+                        },
+                    )
+                    if r_place.status_code == 200:
+                        data = r_place.json()
+                        if isinstance(data, dict) and data.get("ok") and isinstance(data.get("result"), dict):
+                            placeholder_message_id = data["result"].get("message_id")
+            except Exception as e:
+                _log.warning("telegram placeholder send failed: %s", e)
             try:
                 reply_text = await _get_chat_reply(
                     tenant_id,
@@ -280,6 +297,17 @@ async def _telegram_webhook_handle(tenant_id: UUID, request: Request, db: AsyncS
             )
             if r.status_code != 200:
                 _log.warning("telegram sendMessage failed: %s %s", r.status_code, r.text)
+            # Удаляем сообщение «Запрос получен...», чтобы не засорять чат
+            if placeholder_message_id is not None:
+                try:
+                    r_del = await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/deleteMessage",
+                        json={"chat_id": chat_id, "message_id": placeholder_message_id},
+                    )
+                    if r_del.status_code != 200:
+                        _log.warning("telegram deleteMessage failed: %s %s", r_del.status_code, r_del.text)
+                except Exception as e:
+                    _log.warning("telegram deleteMessage request failed: %s", e)
     except Exception as e:
         _log.exception("telegram sendMessage request failed: %s", e)
 

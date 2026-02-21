@@ -133,17 +133,23 @@ async def run_user_chat_with_mcp_tools(
     Запускает диалог с моделью, передаёт tools только из MCP-серверов, добавленных в БД.
     При tool_calls выполняет вызовы через MCP и повторяет запрос (до 3 раундов).
     Возвращает финальный текст ответа (без tool_calls).
-    Логирование: боевой чат (prodchat — iframe/Telegram) всегда; тестовый (testchat) только при is_admin.
+    Логирование: prodchat (iframe) и telegramchat (Telegram) — всегда; testchat — только при is_admin.
     При from_telegram в промпт добавляется контекст про Telegram.
     """
     tools = await _get_all_tools_for_llm(tenant_id, db)
     prompt_with_context = (system_prompt or "").strip() + _CONTEXT_TENANT_BLOCK
     if from_telegram:
         prompt_with_context += _TELEGRAM_CONTEXT
-    chat_type = "testchat" if is_test else "prodchat"
+    # Разделение логов: iframe → prodchat, Telegram → telegramchat, тест в кабинете → testchat
+    if is_test:
+        chat_type = "testchat"
+    elif from_telegram:
+        chat_type = "telegramchat"
+    else:
+        chat_type = "prodchat"
     log_session_id = session_id or "user"
-    # Боевой чат (iframe, Telegram) логируем всегда; тестовый — только для админа
-    should_log = (chat_type == "prodchat") or is_admin
+    # prodchat и telegramchat логируем всегда; testchat — только для админа
+    should_log = (chat_type in ("prodchat", "telegramchat")) or is_admin
 
     if not tools:
         from app.llm_client import chat_once

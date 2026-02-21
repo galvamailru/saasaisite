@@ -168,8 +168,13 @@
     .prompt-tabs .prompt-tab { padding: 0.5rem 1rem; font-size: 0.9rem; background: var(--surface); border: 1px solid var(--border); border-bottom: none; border-radius: 8px 8px 0 0; cursor: pointer; color: var(--text-muted, #666); }
     .prompt-tabs .prompt-tab:hover { color: var(--text); background: rgba(88,166,255,0.06); }
     .prompt-tabs .prompt-tab.active { background: var(--bg); color: var(--accent); font-weight: 600; margin-bottom: -1px; padding-bottom: calc(0.5rem + 1px); }
+    .prompt-tabs .prompt-tab .prompt-tab-hint { font-weight: normal; font-size: 0.75rem; opacity: 0.85; }
     .prompt-tab-panel { display: none; padding: 1rem 0; border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; background: var(--bg); }
     .prompt-tab-panel.active { display: block; }
+    .prompt-panel-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem 0.5rem; padding: 0.6rem 1rem; margin: -1rem 0 1rem 0; border-radius: 6px; font-weight: 600; font-size: 0.95rem; }
+    .prompt-panel-heading.prompt-type-test { background: rgba(88,166,255,0.15); color: #1976d2; border-bottom: 1px solid rgba(88,166,255,0.3); }
+    .prompt-panel-heading.prompt-type-prod { background: rgba(46,125,50,0.15); color: #2e7d32; border-bottom: 1px solid rgba(46,125,50,0.35); }
+    .prompt-panel-heading .prompt-panel-desc { font-weight: normal; font-size: 0.85rem; color: var(--text-muted, #666); margin-left: 0.25rem; }
     .admin-chunk-card { border: 1px solid var(--border); background: rgba(88,166,255,0.04); }
     .admin-chunk-card .chunk-question-input { margin-bottom: 0.5rem; }
     .admin-chunk-card textarea { min-height: 100px; }
@@ -629,17 +634,19 @@
         html += '<div style="margin-top:0.5rem;"><button type="button" id="saveWelcomeMessage">Сохранить приветствие</button></div>';
         html += '</div>';
         html += '<p class="hint">Отдельные промпты для тестового чата (в кабинете) и боевого бота (iframe на сайте).</p>';
-        html += '<div class="prompt-tabs" role="tablist">';
-        html += '<button type="button" class="prompt-tab active" role="tab" aria-selected="true" data-tab="test">Тестовый</button>';
-        html += '<button type="button" class="prompt-tab" role="tab" aria-selected="false" data-tab="prod">Боевой</button>';
+        html += '<div class="prompt-tabs" role="tablist" aria-label="Выбор промпта">';
+        html += '<button type="button" class="prompt-tab active" role="tab" aria-selected="true" data-tab="test" title="Промпт для тестового чата в кабинете">Тестовый <span class="prompt-tab-hint">(кабинет)</span></button>';
+        html += '<button type="button" class="prompt-tab" role="tab" aria-selected="false" data-tab="prod" title="Промпт для чата на сайте и Telegram">Боевой <span class="prompt-tab-hint">(сайт, Telegram)</span></button>';
         html += '</div>';
         html += '<div id="promptTabTest" class="prompt-tab-panel active" role="tabpanel">';
-        html += '<div class="admin-prompt-system"><label>Тестовый промпт (чат в кабинете)</label>';
+        html += '<div class="prompt-panel-heading prompt-type-test">Вы редактируете: <strong>Тестовый промпт</strong><span class="prompt-panel-desc">— используется в тестовом чате в кабинете (для проверки перед публикацией)</span></div>';
+        html += '<div class="admin-prompt-system"><label>Текст тестового промпта</label>';
         html += '<textarea id="userTestPrompt" placeholder="Опишите роль агента, бизнес-цель и ключевые правила для тестового чата..."></textarea>';
         html += '<div style="margin-top:0.5rem;"><button type="button" id="saveTestPrompt">Сохранить тестовый промпт</button> ';
         html += '<button type="button" id="restoreUserPromptDefault">Загрузить из файла по умолчанию</button></div></div></div>';
         html += '<div id="promptTabProd" class="prompt-tab-panel" role="tabpanel">';
-        html += '<div class="admin-prompt-system"><label>Боевой промпт (бот в iframe на сайте)</label>';
+        html += '<div class="prompt-panel-heading prompt-type-prod">Вы редактируете: <strong>Боевой промпт</strong><span class="prompt-panel-desc">— используется в чате на вашем сайте (iframe) и в Telegram-боте</span></div>';
+        html += '<div class="admin-prompt-system"><label>Текст боевого промпта</label>';
         html += '<textarea id="userProdPrompt" placeholder="Промпт боевого чат-бота для клиентов..."></textarea>';
         html += '<div style="margin-top:0.5rem;"><button type="button" id="saveProdPrompt">Сохранить боевой промпт</button> ';
         html += '<button type="button" id="copyTestToProd">Скопировать тестовый → боевой (с бэкапом)</button> ';

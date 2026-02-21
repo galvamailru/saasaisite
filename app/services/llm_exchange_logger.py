@@ -1,6 +1,6 @@
 """Единое логирование обменов с DeepSeek: запрос и ответ по типам чата в раздельные директории.
-Вызов append_exchange делается вызывающим кодом: боевой чат (prodchat — iframe/Telegram) логируется всегда,
-тестовый (testchat) и админ-чат (adminchat) — только для администратора."""
+Вызов append_exchange делается вызывающим кодом: prodchat (iframe) и telegramchat (Telegram) логируются всегда,
+testchat и adminchat — только для администратора."""
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
@@ -9,12 +9,12 @@ from app.config import PROJECT_ROOT
 
 SEP_LINE = "#" * 60
 
-# Поддиректории под logs/
-CHAT_TYPE_DIRS = ("testchat", "prodchat", "adminchat")
+# Поддиректории под logs/: testchat, prodchat (iframe), telegramchat (Telegram), adminchat
+CHAT_TYPE_DIRS = ("testchat", "prodchat", "telegramchat", "adminchat")
 
 
 def _log_dir(chat_type: str) -> Path:
-    """Директория для типа чата: logs/testchat, logs/prodchat, logs/adminchat."""
+    """Директория для типа чата: logs/testchat, logs/prodchat, logs/telegramchat, logs/adminchat."""
     if chat_type not in CHAT_TYPE_DIRS:
         chat_type = "prodchat"
     return PROJECT_ROOT / "logs" / chat_type
@@ -39,8 +39,8 @@ def append_exchange(
 ) -> None:
     """
     Пишет в лог один обмен с DeepSeek (запрос и ответ).
-    Вызывающий код решает, когда вызывать (prodchat — всегда, testchat/adminchat — при is_admin).
-    chat_type: "testchat" | "prodchat" | "adminchat" — поддиректория в logs/.
+    Вызывающий код решает, когда вызывать (prodchat/telegramchat — всегда, testchat/adminchat — при is_admin).
+    chat_type: "testchat" | "prodchat" | "telegramchat" | "adminchat" — поддиректория в logs/.
     """
     if chat_type not in CHAT_TYPE_DIRS:
         chat_type = "prodchat"
