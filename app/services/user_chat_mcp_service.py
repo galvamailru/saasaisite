@@ -21,6 +21,7 @@ from app.services.mcp_client import (
     get_rag_tools_for_llm,
 )
 from app.services.cabinet_service import list_mcp_servers, get_mcp_server
+from app.services.llm_exchange_logger import append_exchange
 
 MAX_TOOL_ROUNDS = 3
 # Сколько последних сообщений диалога передавать в модель (контекстное окно)
@@ -46,6 +47,21 @@ _CONTEXT_TENANT_BLOCK = """
 
 Изображения из галереи: инструмент show_gallery возвращает список URL-путей изображений (каждая строка — один путь вида /api/v1/tenants/.../me/gallery/.../file). Формат отображения ссылок на изображения задаётся в системном промпте.
 """
+
+# Контекст для запросов из Telegram-бота (добавляется в системный промпт)
+_TELEGRAM_CONTEXT = "\n\nОбрати внимание! Этот запрос от телеграм бота."
+
+
+def _build_request_to_llm_text(prompt: str, messages: list[dict]) -> str:
+    """Собирает текст запроса к LLM для логирования."""
+    parts = [f"[system]\n{prompt}\n\n[messages]\n"]
+    for m in messages:
+        role = m.get("role", "")
+        content = m.get("content") or ""
+        if isinstance(content, list):
+            content = str(content)
+        parts.append(f"{role}:\n{content}\n")
+    return "".join(parts)
 
 
 async def _get_all_tools_for_llm(tenant_id: UUID, db: AsyncSession) -> list[dict]:
@@ -107,24 +123,66 @@ async def run_user_chat_with_mcp_tools(
     system_prompt: str,
     messages: list[dict],
     db: AsyncSession,
+    *,
+    from_telegram: bool = False,
+    is_admin: bool = False,
+    is_test: bool = False,
+    session_id: str | None = None,
 ) -> str:
     """
     Запускает диалог с моделью, передаёт tools только из MCP-серверов, добавленных в БД.
     При tool_calls выполняет вызовы через MCP и повторяет запрос (до 3 раундов).
     Возвращает финальный текст ответа (без tool_calls).
+    Логирование в testchat/prodchat только при is_admin; при from_telegram в промпт добавляется контекст про Telegram.
     """
     tools = await _get_all_tools_for_llm(tenant_id, db)
     prompt_with_context = (system_prompt or "").strip() + _CONTEXT_TENANT_BLOCK
+    if from_telegram:
+        prompt_with_context += _TELEGRAM_CONTEXT
+    chat_type = "testchat" if is_test else "prodchat"
+    log_session_id = session_id or "user"
+
     if not tools:
         from app.llm_client import chat_once
-        return await chat_once(prompt_with_context, messages)
+        current_messages = list(messages)[-CONTEXT_MESSAGE_LIMIT:]
+        request_text = _build_request_to_llm_text(prompt_with_context, current_messages)
+        result = await chat_once(prompt_with_context, current_messages)
+        if is_admin:
+            append_exchange(
+                chat_type,
+                tenant_id,
+                log_session_id,
+                request_text,
+                result or "",
+                is_new_session=True,
+                is_admin=True,
+            )
+        return result or ""
 
     # Контекстное окно: только последние N сообщений
     current_messages = list(messages)[-CONTEXT_MESSAGE_LIMIT:]
+    round_index = 0
     for _ in range(MAX_TOOL_ROUNDS):
+        request_text = _build_request_to_llm_text(prompt_with_context, current_messages)
         out = await chat_once_with_tools(prompt_with_context, current_messages, tools)
         content = out.get("content") or ""
         tool_calls = out.get("tool_calls")
+        response_for_log = content
+        if tool_calls:
+            response_for_log += "\n[tool_calls]\n" + "\n".join(
+                f"  {tc.get('name', '')}(...)" for tc in tool_calls
+            )
+        if is_admin:
+            append_exchange(
+                chat_type,
+                tenant_id,
+                log_session_id,
+                request_text,
+                response_for_log,
+                is_new_session=(round_index == 0),
+                is_admin=True,
+            )
+        round_index += 1
 
         if not tool_calls:
             return _inject_base_url_to_image_paths(content, tenant_id)

@@ -4,7 +4,7 @@ import logging
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,9 +15,10 @@ from app.schemas import ChatMessageResponse, ChatRequest
 from app.services.chat_service import get_or_create_dialog, get_dialog_messages_for_llm, save_message
 from app.services.leads import save_lead_if_contact
 from app.services.prompt_loader import get_welcome_for_tenant, load_prompt_for_tenant, load_test_prompt_for_tenant
-from app.services.cabinet_service import get_tenant_by_id, get_tenant_by_slug
+from app.services.cabinet_service import get_tenant_by_id, get_tenant_by_slug, is_user_admin_for_tenant
 from app.services.user_chat_mcp_service import run_user_chat_with_mcp_tools
 from app.services.test_chat_history import get_test_history, save_test_history
+from app.services.auth_service import decode_jwt
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["chat"])
 
@@ -32,6 +33,8 @@ async def _get_chat_reply(
     message_text: str,
     db: AsyncSession,
     is_test: bool = False,
+    from_telegram: bool = False,
+    is_admin: bool = False,
 ) -> str:
     """Получить полный ответ бота (сохраняет сообщения в БД). Для SSE и для JSON-ответа."""
     tenant = await get_tenant_by_id(db, tenant_id)
@@ -48,14 +51,25 @@ async def _get_chat_reply(
         previous_history = get_test_history(tenant_id, user_id)
         history = previous_history + [{"role": "user", "content": message_text}]
         dialog = None
+        session_id = f"test_{user_id}"
     else:
         dialog = await get_or_create_dialog(db, tenant_id, user_id, dialog_id)
         history = await get_dialog_messages_for_llm(db, dialog.id, tenant_id)
         history.append({"role": "user", "content": message_text})
         await save_message(db, tenant_id, user_id, dialog.id, "user", message_text)
         await save_lead_if_contact(db, tenant_id, user_id, dialog.id, message_text)
+        session_id = str(dialog.id) if dialog else user_id
     try:
-        final_text = await run_user_chat_with_mcp_tools(tenant_id, prompt, history, db)
+        final_text = await run_user_chat_with_mcp_tools(
+            tenant_id,
+            prompt,
+            history,
+            db,
+            from_telegram=from_telegram,
+            is_admin=is_admin,
+            is_test=is_test,
+            session_id=session_id,
+        )
     except Exception:
         if not is_test and dialog:
             await save_message(
@@ -86,10 +100,19 @@ async def _sse_stream(
     message_text: str,
     db: AsyncSession,
     is_test: bool = False,
+    from_telegram: bool = False,
+    is_admin: bool = False,
 ):
     try:
         final_text = await _get_chat_reply(
-            tenant_id, user_id, dialog_id, message_text, db, is_test=is_test
+            tenant_id,
+            user_id,
+            dialog_id,
+            message_text,
+            db,
+            is_test=is_test,
+            from_telegram=from_telegram,
+            is_admin=is_admin,
         )
     except HTTPException as e:
         yield f"data: {json.dumps({'error': e.detail})}\n\n"
@@ -102,11 +125,28 @@ async def _sse_stream(
     yield "data: [DONE]\n\n"
 
 
+async def _resolve_is_admin(
+    db: AsyncSession, tenant_id: UUID, authorization: str | None
+) -> bool:
+    """Проверяет, является ли текущий пользователь (по JWT) администратором. Без токена — False."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return False
+    token = authorization[7:].strip()
+    payload = decode_jwt(token)
+    if not payload:
+        return False
+    user_id = str(payload.get("sub", ""))
+    if not user_id:
+        return False
+    return await is_user_admin_for_tenant(db, tenant_id, user_id)
+
+
 @router.post("/{tenant_id:uuid}/chat")
 async def post_message(
     tenant_id: UUID,
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
+    authorization: str | None = Header(None),
 ):
     message_text = (request.message or "").strip()
     if not message_text:
@@ -124,6 +164,7 @@ async def post_message(
             status_code=400,
             detail=f"Сообщение слишком длинное. Максимум {max_len} символов.",
         )
+    is_admin = await _resolve_is_admin(db, tenant_id, authorization)
     return StreamingResponse(
         _sse_stream(
             tenant_id,
@@ -132,6 +173,8 @@ async def post_message(
             message_text,
             db,
             is_test=request.is_test,
+            from_telegram=False,
+            is_admin=is_admin,
         ),
         media_type="text/event-stream",
         headers={
@@ -147,6 +190,7 @@ async def post_message_json(
     tenant_id: UUID,
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
+    authorization: str | None = Header(None),
 ):
     """
     Ответ одним сообщением (JSON). Те же параметры, что и POST .../chat; в ответе — поле reply с полным текстом ответа бота.
@@ -166,6 +210,7 @@ async def post_message_json(
             status_code=400,
             detail=f"Сообщение слишком длинное. Максимум {max_len} символов.",
         )
+    is_admin = await _resolve_is_admin(db, tenant_id, authorization)
     reply = await _get_chat_reply(
         tenant_id,
         request.user_id,
@@ -173,6 +218,8 @@ async def post_message_json(
         message_text,
         db,
         is_test=request.is_test,
+        from_telegram=False,
+        is_admin=is_admin,
     )
     return ChatMessageResponse(reply=reply)
 
@@ -212,7 +259,16 @@ async def _telegram_webhook_handle(tenant_id: UUID, request: Request, db: AsyncS
             reply_text = f"Сообщение слишком длинное. Максимум {limits['chat_max_user_message_chars']} символов."
         else:
             try:
-                reply_text = await _get_chat_reply(tenant_id, user_id, None, text, db, is_test=False)
+                reply_text = await _get_chat_reply(
+                    tenant_id,
+                    user_id,
+                    None,
+                    text,
+                    db,
+                    is_test=False,
+                    from_telegram=True,
+                    is_admin=False,
+                )
             except Exception as e:
                 _log.exception("telegram_webhook chat reply failed: %s", e)
                 reply_text = "Ошибка при обработке сообщения. Попробуйте позже."

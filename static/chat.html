@@ -371,9 +371,12 @@
           const body = { user_id: userId, message: text };
           if (dialogId) body.dialog_id = dialogId;
           if (isTestMode) body.is_test = true;
+          const headers = { 'Content-Type': 'application/json' };
+          const token = localStorage.getItem('cip_access_token');
+          if (token) headers['Authorization'] = 'Bearer ' + token;
           const res = await fetch('/api/v1/tenants/' + tenantId + '/chat', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify(body),
           });
           if (!res.ok) {

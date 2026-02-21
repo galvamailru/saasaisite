@@ -47,6 +47,7 @@ from app.services.cabinet_service import (
     get_saved_by_id,
     get_tenant_by_id,
     get_tenant_by_slug,
+    is_user_admin_for_tenant,
     list_all_tenants,
     list_dialogs,
     list_leads,
@@ -1455,12 +1456,14 @@ async def admin_chat(
         request_to_llm_parts.append(f"{role}:\n{content}\n")
     request_to_llm = "".join(request_to_llm_parts)
     raw_reply = result.get("raw_reply") or ""
+    is_admin = await is_user_admin_for_tenant(db, tenant_id, user_id)
     append_admin_chat_exchange(
         tenant_id,
         session_id,
         request_to_llm,
         raw_reply,
         is_new_session=not body.history,
+        is_admin=is_admin,
     )
     return AdminChatResponse(
         reply=reply_text,

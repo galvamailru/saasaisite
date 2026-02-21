@@ -8,9 +8,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings as app_settings
 from app.models import Dialog, DialogView, Lead, McpServer, Message, SavedItem, UserProfile
+from app.services.auth_service import get_tenant_user_by_id, get_tenant_user_by_primary_key
 
 
 PREVIEW_MAX_LEN = 120
+
+
+async def is_user_admin_for_tenant(
+    db: AsyncSession, tenant_id: UUID, user_id_str: str
+) -> bool:
+    """
+    Проверяет, является ли пользователь администратором (для текущего или домашнего тенанта).
+    Используется для включения логирования обменов с DeepSeek только для админов.
+    """
+    tenant = await get_tenant_by_id(db, tenant_id)
+    if not tenant:
+        return False
+    admin_slug = (app_settings.admin_tenant_slug or "").strip()
+    if not admin_slug:
+        return False
+    if tenant.slug == admin_slug:
+        return True
+    try:
+        uid = UUID(user_id_str)
+    except ValueError:
+        return False
+    home_user = await get_tenant_user_by_primary_key(db, uid)
+    if not home_user:
+        return False
+    home_tenant = await get_tenant_by_id(db, home_user.tenant_id)
+    return bool(home_tenant and home_tenant.slug == admin_slug)
 
 
 async def get_tenant_by_slug(db: AsyncSession, slug: str):
